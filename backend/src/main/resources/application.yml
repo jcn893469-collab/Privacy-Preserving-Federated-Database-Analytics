@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: federated-privacy-analytics
+  profiles:
+    active: dev
+
+server:
+  port: 8080

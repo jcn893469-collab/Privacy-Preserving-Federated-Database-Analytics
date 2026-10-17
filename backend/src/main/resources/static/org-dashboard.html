@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Organization Dashboard — Privacy-Preserving Federated Analytics</title>
+<link rel="stylesheet" href="css/org-portal.css" />
+<style>
+  .budget-bar-container {
+    background: #e2e8f0;
+    border-radius: 999px;
+    height: 8px;
+    width: 100%;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .budget-bar-fill {
+    height: 100%;
+    background: #10b981;
+    transition: width 0.3s ease;
+  }
+  .budget-bar-fill.warning { background: #f59e0b; }
+  .budget-bar-fill.danger { background: #ef4444; }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .modal-box {
+    background: #fff; border-radius: 8px; padding: 24px;
+    max-width: 480px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  }
+  .pagination-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 14px; font-size: 12px; color: var(--text-2);
+  }
+  .pagination-btns { display: flex; gap: 6px; }
+  .pagination-btns button {
+    padding: 4px 10px; border: 1px solid var(--border-strong);
+    background: #fff; border-radius: 4px; cursor: pointer;
+  }
+  .pagination-btns button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2L3 6V11C3 16.5 6.8 21.3 12 22.5C17.2 21.3 21 16.5 21 11V6L12 2Z" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M9 12L11 14L15 10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-title">Privacy Federated Analytics</div>
+      <div class="brand-sub">Organization Portal &bull; Gaussian Differential Privacy</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <a href="index.html" style="font-size:12px; color:var(--text-1); text-decoration:none; margin-right:12px;">Public Portal</a>
+    <div class="user-pill">
+      <span class="user-avatar" id="userAvatar">?</span>
+      <span id="userName">—</span>
+      <span class="role-tag" id="userRole">DATA_OWNER</span>
+    </div>
+    <button class="btn-logout" onclick="OrgAuth.logout()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+        <path d="M16 17l5-5-5-5"/>
+        <path d="M21 12H9"/>
+      </svg>
+      Log out
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- PRIVACY MANDATE BANNER -->
+  <section>
+    <div class="privacy-banner">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 2L3 6V11C3 16.5 6.8 21.3 12 22.5C17.2 21.3 21 16.5 21 11V6L12 2Z"/>
+        <path d="M9 12L11 14L15 10" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <strong>Your raw dataset is processed locally and is never uploaded to the central server.</strong>
+        All CSV parsing, anomaly filtering, clipping, sensitivity calibration, and Gaussian DP noise injection execute in this browser.
+      </div>
+    </div>
+  </section>
+
+  <!-- ORGANIZATION & PRIVACY BUDGET -->
+  <section>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <div class="section-title" style="margin-bottom:0;">Organization &amp; Privacy Budget</div>
+      <button class="btn-secondary" id="btnRegisterDb" onclick="openRegisterModal()" style="display:none; padding:5px 12px; font-size:11px;">+ Register New Database</button>
+    </div>
+    <div class="cards-grid" style="grid-template-columns: repeat(4, 1fr);">
+      <div class="card metric-card">
+        <div class="label">Organization Node</div>
+        <div class="value small" id="infoOrgName">Loading…</div>
+        <div class="sub" id="infoDbIdentifier">—</div>
+      </div>
+      <div class="card metric-card">
+        <div class="label">Privacy Budget (&epsilon;)</div>
+        <div class="value" id="infoTotalBudget">—</div>
+        <div class="sub" id="infoDeltaBudget">&delta; = 1.00e-5</div>
+      </div>
+      <div class="card metric-card">
+        <div class="label">Budget Spent (&epsilon;)</div>
+        <div class="value" id="infoSpentBudget">—</div>
+        <div class="budget-bar-container">
+          <div class="budget-bar-fill" id="budgetBarFill" style="width: 0%;"></div>
+        </div>
+      </div>
+      <div class="card metric-card">
+        <div class="label">Budget Remaining (&epsilon;)</div>
+        <div class="value" id="infoRemainingBudget" style="color:var(--green);">—</div>
+        <div class="sub" id="infoContributionCount">0 contributions submitted</div>
+      </div>
+    </div>
+    <div class="alert error" id="orgInfoError" style="display:none; margin-top:12px;"></div>
+  </section>
+
+  <!-- CSV UPLOAD -->
+  <section>
+    <div class="section-title">Upload Sensitive Local Dataset</div>
+    <div class="card">
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="csvFile" accept=".csv,text/csv" />
+        <div class="upload-title">Click to choose a CSV file, or drag &amp; drop here</div>
+        <div class="upload-sub">Header row + comma-separated values. Processed 100% locally in browser memory.</div>
+      </div>
+      <div id="fileChipHolder"></div>
+      <div class="alert error" id="csvError" style="display:none; margin-top:12px;"></div>
+    </div>
+  </section>
+
+  <!-- DATA PREVIEW -->
+  <section id="previewSection" style="display:none;">
+    <div class="section-title">Local In-Memory Data Preview</div>
+    <div class="card">
+      <div style="margin-bottom:12px; font-size:12px; color:var(--text-1);" id="previewSummary"></div>
+      <div style="margin-bottom:14px;" id="columnTags"></div>
+      <div class="table-wrap">
+        <table id="previewTable">
+          <thead><tr id="previewHead"></tr></thead>
+          <tbody id="previewBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOCAL ANALYSIS & DP CONFIGURATION -->
+  <section id="analyzeSection" style="display:none;">
+    <div class="section-title">Local Processing, Anomaly Detection &amp; Differential Privacy</div>
+    <div class="card">
+      <div class="form-row" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; align-items:end;">
+        <div class="field-group">
+          <label for="metricSelect">Target Numeric Column</label>
+          <select id="metricSelect" onchange="onColumnChanged()"></select>
+        </div>
+        <div class="field-group">
+          <label for="clipLowerInput">Clipping Lower Bound (L)</label>
+          <input type="number" id="clipLowerInput" value="0" step="any" />
+        </div>
+        <div class="field-group">
+          <label for="clipUpperInput">Clipping Upper Bound (U)</label>
+          <input type="number" id="clipUpperInput" value="100" step="any" />
+        </div>
+        <div class="field-group">
+          <label for="epsilonInput">Per-Round Epsilon (&epsilon;)</label>
+          <input type="number" id="epsilonInput" value="1.0" step="0.1" min="0.01" />
+        </div>
+        <div class="field-group">
+          <button class="btn-primary" id="analyzeBtn" onclick="runFullLocalPrivacyPipeline()" style="height:38px; width:100%;">Process Locally</button>
+        </div>
+      </div>
+
+      <div class="status-line" id="analysisStatus" style="display:none; margin-top:14px;">
+        <span class="dot"></span>
+        <span id="analysisStatusText"></span>
+      </div>
+
+      <!-- LOCAL STATISTICS -->
+      <div class="result-grid" id="resultGrid" style="display:none; margin-top:16px;">
+        <div class="result-item">
+          <div class="label">Local Count</div>
+          <div class="value" id="resCount">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Raw Unclipped Sum</div>
+          <div class="value" id="resSum">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Clipped Sum</div>
+          <div class="value" id="resClippedSum">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Local Mean</div>
+          <div class="value" id="resMean">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Std Deviation</div>
+          <div class="value" id="resStdDev">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Sensitivity (&Delta;f = U - L)</div>
+          <div class="value" id="resSensitivity">—</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ANOMALY DETECTION SECTION -->
+  <section id="anomalySection" style="display:none;">
+    <div class="section-title">Z-Score Outlier &amp; Anomaly Detection (|z| &gt; 3.0)</div>
+    <div class="card">
+      <div class="info-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:14px;">
+        <div class="info-item">
+          <div class="label">Anomalies Detected</div>
+          <div class="value" id="anomCount">0</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Anomaly Rate</div>
+          <div class="value" id="anomRate">0.00%</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Mean |z| of Anomalies</div>
+          <div class="value" id="anomMeanZ">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Max |z| Score</div>
+          <div class="value" id="anomMaxZ">—</div>
+        </div>
+      </div>
+      <div id="anomTableWrap" class="table-wrap" style="display:none; max-height:160px; overflow-y:auto;">
+        <table>
+          <thead><tr><th>Row #</th><th>Value</th><th>|z|-Score</th><th>Evaluation</th></tr></thead>
+          <tbody id="anomBody"></tbody>
+        </table>
+      </div>
+      <div id="anomEmpty" style="font-size:12px; color:var(--text-1); padding:6px 0;">No outliers exceeded |z| &gt; 3.0 threshold.</div>
+    </div>
+  </section>
+
+  <!-- DIFFERENTIAL PRIVACY RELEASE & SUBMISSION -->
+  <section id="dpSection" style="display:none;">
+    <div class="section-title">Gaussian Differential Privacy Engine &amp; Submission</div>
+    <div class="card">
+      <div class="info-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:14px;">
+        <div class="info-item">
+          <div class="label">Gaussian Noise Scale</div>
+          <div class="value" id="dpNoiseScale">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Noise Sigma (&sigma;)</div>
+          <div class="value" id="dpSigma">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Sampled Noise</div>
+          <div class="value" id="dpNoiseSampled">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Protected Aggregate Sum</div>
+          <div class="value" id="dpNoisySum" style="color:var(--green); font-size:18px;">—</div>
+        </div>
+      </div>
+
+      <div class="info-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:18px;">
+        <div class="info-item">
+          <div class="label">RDP Privacy Cost This Round</div>
+          <div class="value" id="dpRoundCost">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Projected Total Spent</div>
+          <div class="value" id="dpProjectedSpent">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Privacy Budget Status</div>
+          <div class="value" id="dpBudgetStatus" style="color:var(--green);">WITHIN BUDGET</div>
+        </div>
+      </div>
+
+      <!-- TRANSMISSION TRANSPARENCY BOX -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="card" style="border-color:#cbd2dd;">
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-2); margin-bottom:8px;">
+            🔒 Kept Local (Never Sent)
+          </div>
+          <div style="font-size:12px; color:var(--text-1); line-height:1.8;">
+            • Raw CSV rows &amp; values<br/>
+            • Exact unclipped local sum<br/>
+            • Individual anomaly records<br/>
+            • Specific patient / user identifiers
+          </div>
+        </div>
+        <div class="card" style="border-color:#bfe6d2; background:var(--green-bg);">
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--green); margin-bottom:8px;">
+            ☁ Submitted Protected Aggregate
+          </div>
+          <div style="font-size:12px; color:#10603d; line-height:1.8;">
+            • <code>databaseId</code> &amp; <code>recordCount</code><br/>
+            • <code>noisySum</code> (Gaussian-perturbed)<br/>
+            • <code>epsilon</code>, <code>delta</code>, <code>sigma</code>, <code>sensitivity</code><br/>
+            • <code>clippingLower</code>, <code>clippingUpper</code>, <code>anomalyRate</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert error" id="budgetExceededWarning" style="display:none; margin-bottom:14px;">
+        <strong>Privacy Budget Exceeded:</strong> This submission would cause cumulative privacy spend to exceed your organization's allowed budget of &epsilon; = <span id="warnBudget"></span>. Submission is blocked.
+      </div>
+
+      <button class="btn-primary full" id="submitContributionBtn" onclick="submitProtectedContribution()">
+        Submit Privacy-Preserved Aggregate to Federated Network
+      </button>
+
+      <div class="status-line" id="submitStatus" style="display:none; margin-top:12px;">
+        <span class="dot"></span>
+        <span id="submitStatusText"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAST CONTRIBUTIONS TABLE WITH SEARCH & PAGINATION -->
+  <section>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <div class="section-title" style="margin-bottom:0;">Submitted Contributions History</div>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="contribSearch" placeholder="Search contributions…" oninput="loadContributions(0)" style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border-strong);" />
+        <button class="refresh" onclick="loadContributions(0)">Refresh</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Records</th>
+            <th>Noisy Sum</th>
+            <th>&epsilon; (Epsilon)</th>
+            <th>Noise &sigma;</th>
+            <th>Sensitivity</th>
+            <th>Clipping Bounds</th>
+            <th>Anomaly Rate</th>
+            <th>Submitted At</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="contributionsBody"></tbody>
+      </table>
+      <div class="empty-state" id="contributionsEmpty" style="display:none;">No contributions submitted yet for this database.</div>
+    </div>
+    <div class="pagination-bar" id="contribPagination">
+      <span id="contribPageInfo">Page 1 of 1</span>
+      <div class="pagination-btns">
+        <button id="btnPrevContrib" onclick="changeContribPage(-1)">Previous</button>
+        <button id="btnNextContrib" onclick="changeContribPage(1)">Next</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEDERATED ANALYTICS DISPLAY -->
+  <section>
+    <div class="section-title">Federated Network Analytics</div>
+    <div class="card">
+      <div class="result-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:14px;">
+        <div class="result-item">
+          <div class="label">Participating Organizations</div>
+          <div class="value" id="fedOrgs">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Total Contributions</div>
+          <div class="value" id="fedContribs">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Total Protected Records</div>
+          <div class="value" id="fedRecords">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Global Protected Mean</div>
+          <div class="value" id="fedMean" style="color:var(--accent);">—</div>
+        </div>
+      </div>
+      <div class="disclaimer">
+        <strong>Differential Privacy Notice:</strong> The global mean is computed centrally as &sum;(Noisy Sums) / &sum;(Record Counts).
+        No participating organization has ever revealed raw records to the server.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- REGISTER DATABASE MODAL -->
+<div class="modal-overlay" id="registerModal" style="display:none;">
+  <div class="modal-box">
+    <div style="font-size:16px; font-weight:700; margin-bottom:12px;">Register Organization Database</div>
+    <div class="field-group" style="margin-bottom:10px;">
+      <label>Organization Name</label>
+      <input type="text" id="regOrgName" placeholder="e.g. City General Hospital" style="width:100%;" />
+    </div>
+    <div class="field-group" style="margin-bottom:10px;">
+      <label>Database Identifier (Unique Slug)</label>
+      <input type="text" id="regDbIdentifier" placeholder="e.g. city-gen-cardio-db" style="width:100%;" />
+    </div>
+    <div class="field-group" style="margin-bottom:16px;">
+      <label>Description</label>
+      <input type="text" id="regDbDesc" placeholder="e.g. Primary cardiology records node" style="width:100%;" />
+    </div>
+    <div class="alert error" id="regError" style="display:none; margin-bottom:12px;"></div>
+    <div style="display:flex; justify-content:flex-end; gap:8px;">
+      <button class="btn-secondary" onclick="closeRegisterModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitDatabaseRegistration()">Register</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/org-portal.js"></script>
+<script>
+  const session = OrgAuth.requireDataOwner();
+
+  let currentDatabase = null;
+  let currentDbId = null;
+  let parsedCsv = null;
+  let numericColumns = [];
+  let currentExtractedValues = [];
+  let currentPipelineResult = null;
+  let contribCurrentPage = 0;
+  let contribTotalPages = 1;
+
+  if (session) {
+    document.getElementById('userAvatar').textContent = initialsFor(session.fullName);
+    document.getElementById('userName').textContent = session.fullName || session.email;
+    document.getElementById('userRole').textContent = session.role;
+    loadOrganizationData();
+  }
+
+  async function loadOrganizationData() {
+    try {
+      const dbs = await OrgAuth.fetchMyDatabases();
+      if (!dbs || dbs.length === 0) {
+        document.getElementById('infoOrgName').textContent = 'No Database Registered';
+        document.getElementById('infoDbIdentifier').textContent = 'Please register an organization database';
+        document.getElementById('btnRegisterDb').style.display = 'block';
+        return;
+      }
+
+      currentDatabase = dbs[0];
+      currentDbId = currentDatabase.id;
+      document.getElementById('infoOrgName').textContent = currentDatabase.organizationName;
+      document.getElementById('infoDbIdentifier').textContent = currentDatabase.dbIdentifier + (currentDatabase.active ? ' • Active' : ' • Inactive');
+
+      await refreshPrivacyStatus();
+      await loadContributions(0);
+      await loadFederatedAnalytics();
+    } catch (err) {
+      document.getElementById('orgInfoError').textContent = err.message || 'Error loading organization.';
+      document.getElementById('orgInfoError').style.display = 'block';
+    }
+  }
+
+  async function refreshPrivacyStatus() {
+    if (!currentDbId) return;
+    const stat = await OrgAuth.fetchPrivacyStatus(currentDbId);
+    if (!stat) return;
+
+    const total = Number(stat.privacyEpsilonBudget) || 10.0;
+    const spent = Number(stat.privacyEpsilonSpent) || 0.0;
+    const remaining = Math.max(0, total - spent);
+    const count = stat.contributionCount || 0;
+
+    document.getElementById('infoTotalBudget').textContent = total.toFixed(4);
+    document.getElementById('infoDeltaBudget').textContent = '\u03B4 = ' + (stat.privacyDeltaBudget ? Number(stat.privacyDeltaBudget).toExponential(2) : '1.00e-5');
+    document.getElementById('infoSpentBudget').textContent = spent.toFixed(4);
+    document.getElementById('infoRemainingBudget').textContent = remaining.toFixed(4);
+    document.getElementById('infoContributionCount').textContent = count + ' contribution' + (count === 1 ? '' : 's') + ' submitted';
+
+    const pct = Math.min(100, (spent / total) * 100);
+    const bar = document.getElementById('budgetBarFill');
+    bar.style.width = pct + '%';
+    bar.className = 'budget-bar-fill' + (pct > 90 ? ' danger' : (pct > 70 ? ' warning' : ''));
+  }
+
+  // File Upload Handlers
+  const uploadZone = document.getElementById('uploadZone');
+  const fileInput = document.getElementById('csvFile');
+  uploadZone.addEventListener('click', () => fileInput.click());
+  uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+
+  function handleFile(file) {
+    document.getElementById('csvError').style.display = 'none';
+    if (!file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv') {
+      showCsvError('Please select a valid .csv file.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        parsedCsv = parseCsv(e.target.result);
+        renderPreview();
+        renderMetricOptions();
+      } catch (err) {
+        showCsvError(err.message || 'Failed to parse CSV.');
+      }
+    };
+    reader.onerror = () => showCsvError('Error reading file.');
+    reader.readAsText(file);
+  }
+
+  function showCsvError(msg) {
+    const el = document.getElementById('csvError');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function renderPreview() {
+    const { headers, rows } = parsedCsv;
+    const { numeric, nonNumeric } = detectNumericColumns(headers, rows);
+    numericColumns = numeric;
+
+    document.getElementById('fileChipHolder').innerHTML = `
+      <div class="file-chip">
+        <span class="dot"></span> ${escapeHtml(fileInput.files[0]?.name || 'Local File')} — ${rows.length} rows loaded locally
+      </div>`;
+
+    document.getElementById('previewSummary').textContent =
+      `${rows.length} rows · ${headers.length} columns · ${numeric.length} numeric columns detected`;
+
+    document.getElementById('columnTags').innerHTML =
+      numeric.map(c => `<span class="col-tag numeric">${escapeHtml(c)}</span>`).join('') +
+      nonNumeric.map(c => `<span class="col-tag text">${escapeHtml(c)}</span>`).join('');
+
+    document.getElementById('previewHead').innerHTML = headers.map(h => `<th>${escapeHtml(h)}</th>`).join('');
+    document.getElementById('previewBody').innerHTML = rows.slice(0, 10).map(r =>
+      `<tr>${headers.map(h => `<td>${escapeHtml(r[h])}</td>`).join('')}</tr>`
+    ).join('');
+
+    document.getElementById('previewSection').style.display = 'block';
+  }
+
+  function renderMetricOptions() {
+    const select = document.getElementById('metricSelect');
+    if (numericColumns.length === 0) {
+      select.innerHTML = '<option value="">No numeric column available</option>';
+      select.disabled = true;
+      document.getElementById('analyzeBtn').disabled = true;
+    } else {
+      select.innerHTML = numericColumns.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      select.disabled = false;
+      document.getElementById('analyzeBtn').disabled = false;
+      onColumnChanged();
+    }
+    document.getElementById('analyzeSection').style.display = 'block';
+  }
+
+  function onColumnChanged() {
+    const col = document.getElementById('metricSelect').value;
+    if (!col || !parsedCsv) return;
+    const vals = extractNumericValues(parsedCsv.rows, col);
+    if (vals.length > 0) {
+      const min = Math.min(...vals);
+      const max = Math.max(...vals);
+      // Auto-populate sensible clipping bounds
+      document.getElementById('clipLowerInput').value = Math.floor(min);
+      document.getElementById('clipUpperInput').value = Math.ceil(max);
+    }
+  }
+
+  // FULL LOCAL PRIVACY PIPELINE EXECUTION
+  function runFullLocalPrivacyPipeline() {
+    const col = document.getElementById('metricSelect').value;
+    if (!col || !parsedCsv) return;
+
+    const lower = Number(document.getElementById('clipLowerInput').value);
+    const upper = Number(document.getElementById('clipUpperInput').value);
+    const epsilon = Number(document.getElementById('epsilonInput').value);
+    const delta = currentDatabase?.privacyDeltaBudget ? Number(currentDatabase.privacyDeltaBudget) : 1e-5;
+
+    if (isNaN(lower) || isNaN(upper) || lower >= upper) {
+      alert('Clipping lower bound must be strictly less than upper bound.');
+      return;
+    }
+    if (isNaN(epsilon) || epsilon <= 0) {
+      alert('Epsilon must be greater than zero.');
+      return;
+    }
+
+    const rawValues = extractNumericValues(parsedCsv.rows, col);
+    if (rawValues.length === 0) {
+      alert('No numeric values in column ' + col);
+      return;
+    }
+
+    // Step 1: Clipping
+    const clipped = clipValues(rawValues, lower, upper);
+    const sensitivity = calculateSensitivity(lower, upper);
+
+    // Step 2: Local Statistics
+    const stats = computeLocalStats(clipped);
+    const rawSum = rawValues.reduce((a, b) => a + b, 0);
+
+    document.getElementById('resCount').textContent = stats.count.toLocaleString();
+    document.getElementById('resSum').textContent = round4(rawSum).toLocaleString();
+    document.getElementById('resClippedSum').textContent = round4(stats.sum).toLocaleString();
+    document.getElementById('resMean').textContent = round4(stats.mean).toLocaleString();
+    document.getElementById('resStdDev').textContent = round4(stats.stdDev).toLocaleString();
+    document.getElementById('resSensitivity').textContent = round4(sensitivity).toLocaleString();
+    document.getElementById('resultGrid').style.display = 'grid';
+
+    // Step 3: Z-Score Anomaly Detection
+    const anom = detectAnomaliesZScore(clipped, stats, 3.0);
+    document.getElementById('anomCount').textContent = anom.anomalyCount;
+    document.getElementById('anomRate').textContent = (anom.anomalyRate * 100).toFixed(2) + '%';
+    document.getElementById('anomMeanZ').textContent = anom.meanZScore;
+    document.getElementById('anomMaxZ').textContent = anom.maxZScore;
+
+    if (anom.anomalyCount > 0) {
+      document.getElementById('anomBody').innerHTML = anom.anomalies.map(a =>
+        `<tr><td>Row ${a.rowIndex}</td><td>${a.value}</td><td>${a.zScore}</td><td>|z| &gt; 3.0 (Outlier)</td></tr>`
+      ).join('');
+      document.getElementById('anomTableWrap').style.display = 'block';
+      document.getElementById('anomEmpty').style.display = 'none';
+    } else {
+      document.getElementById('anomTableWrap').style.display = 'none';
+      document.getElementById('anomEmpty').style.display = 'block';
+    }
+    document.getElementById('anomalySection').style.display = 'block';
+
+    // Step 4: Gaussian Mechanism & RDP Privacy Accounting
+    const noiseScale = calibrateNoiseScale(epsilon, delta);
+    const sigma = sensitivity * noiseScale;
+    const noiseSample = generateGaussianNoise(sigma);
+    const noisySum = stats.sum + noiseSample;
+
+    const roundCost = rdpToEpsilon(composeRdp({}, noiseScale), delta);
+    const spentSoFar = currentDatabase ? Number(currentDatabase.privacyEpsilonSpent || 0) : 0;
+    const totalAllowed = currentDatabase ? Number(currentDatabase.privacyEpsilonBudget || 10) : 10;
+    const projectedSpent = spentSoFar + roundCost;
+
+    document.getElementById('dpNoiseScale').textContent = round4(noiseScale);
+    document.getElementById('dpSigma').textContent = round4(sigma);
+    document.getElementById('dpNoiseSampled').textContent = (noiseSample >= 0 ? '+' : '') + round4(noiseSample);
+    document.getElementById('dpNoisySum').textContent = round4(noisySum).toLocaleString();
+    document.getElementById('dpRoundCost').textContent = round4(roundCost) + ' \u03B5';
+    document.getElementById('dpProjectedSpent').textContent = round4(projectedSpent) + ' / ' + totalAllowed.toFixed(2) + ' \u03B5';
+
+    const isExceeded = projectedSpent > totalAllowed;
+    const statusLabel = document.getElementById('dpBudgetStatus');
+    const warnBox = document.getElementById('budgetExceededWarning');
+    const submitBtn = document.getElementById('submitContributionBtn');
+
+    if (isExceeded) {
+      statusLabel.textContent = 'EXCEEDED';
+      statusLabel.style.color = 'var(--red)';
+      document.getElementById('warnBudget').textContent = totalAllowed.toFixed(2);
+      warnBox.style.display = 'block';
+      submitBtn.disabled = true;
+    } else {
+      statusLabel.textContent = 'WITHIN BUDGET';
+      statusLabel.style.color = 'var(--green)';
+      warnBox.style.display = 'none';
+      submitBtn.disabled = false;
+    }
+
+    currentPipelineResult = {
+      recordCount: stats.count,
+      noisySum: round4(noisySum),
+      epsilon: epsilon,
+      delta: delta,
+      clippingLower: lower,
+      clippingUpper: upper,
+      sensitivity: round4(sensitivity),
+      noiseSigma: round4(sigma),
+      noiseScale: round4(noiseScale),
+      anomalyCount: anom.anomalyCount,
+      anomalyRate: round4(anom.anomalyRate)
+    };
+
+    document.getElementById('dpSection').style.display = 'block';
+  }
+
+  // SUBMIT PROTECTED AGGREGATE TO SERVER
+  async function submitProtectedContribution() {
+    if (!currentPipelineResult || !currentDbId) {
+      alert('Please run local processing first.');
+      return;
+    }
+
+    const btn = document.getElementById('submitContributionBtn');
+    const statusLine = document.getElementById('submitStatus');
+    const statusText = document.getElementById('submitStatusText');
+
+    btn.disabled = true;
+    statusLine.style.display = 'flex';
+    statusLine.className = 'status-line busy';
+    statusText.textContent = 'Submitting protected aggregate to PostgreSQL database…';
+
+    try {
+      const response = await OrgAuth.submitContribution(currentPipelineResult);
+      statusLine.className = 'status-line ok';
+      statusText.textContent = `Contribution #${response.id} successfully persisted in PostgreSQL with privacy ledger accounting.`;
+      await refreshPrivacyStatus();
+      await loadContributions(0);
+      await loadFederatedAnalytics();
+    } catch (err) {
+      statusLine.className = 'status-line err';
+      statusText.textContent = err.message || 'Contribution failed.';
+      btn.disabled = false;
+    }
+  }
+
+  // LOAD CONTRIBUTIONS TABLE WITH PAGINATION & SEARCH
+  async function loadContributions(page = 0) {
+    if (!currentDbId) return;
+    contribCurrentPage = page;
+    const query = document.getElementById('contribSearch').value;
+
+    try {
+      const pageData = await OrgAuth.fetchContributions(currentDbId, page, 5, query);
+      const items = pageData.content || [];
+      contribTotalPages = pageData.totalPages || 1;
+
+      const body = document.getElementById('contributionsBody');
+      const empty = document.getElementById('contributionsEmpty');
+
+      if (items.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+      } else {
+        empty.style.display = 'none';
+        body.innerHTML = items.map(c => `
+          <tr>
+            <td><strong>#${c.id}</strong></td>
+            <td>${c.recordCount}</td>
+            <td>${Number(c.noisySum).toFixed(2)}</td>
+            <td>&epsilon;=${c.epsilon}</td>
+            <td>&sigma;=${c.noiseSigma}</td>
+            <td>&Delta;f=${c.sensitivity}</td>
+            <td>[${c.clippingLower ?? 0}, ${c.clippingUpper ?? 100}]</td>
+            <td>${((c.anomalyRate || 0) * 100).toFixed(1)}%</td>
+            <td>${new Date(c.submittedAt).toLocaleTimeString()}</td>
+            <td><button onclick="deleteContributionItem(${c.id})" style="color:var(--red); border:none; background:none; cursor:pointer;">Delete</button></td>
+          </tr>
+        `).join('');
+      }
+
+      document.getElementById('contribPageInfo').textContent = `Page ${contribCurrentPage + 1} of ${contribTotalPages} (${pageData.totalElements || 0} total)`;
+      document.getElementById('btnPrevContrib').disabled = contribCurrentPage <= 0;
+      document.getElementById('btnNextContrib').disabled = contribCurrentPage >= contribTotalPages - 1;
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function changeContribPage(delta) {
+    const target = contribCurrentPage + delta;
+    if (target >= 0 && target < contribTotalPages) loadContributions(target);
+  }
+
+  async function deleteContributionItem(id) {
+    if (!confirm(`Delete contribution #${id}?`)) return;
+    try {
+      await OrgAuth.deleteContribution(id);
+      await refreshPrivacyStatus();
+      await loadContributions(contribCurrentPage);
+      await loadFederatedAnalytics();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function loadFederatedAnalytics() {
+    if (!currentDbId) return;
+    try {
+      const res = await OrgAuth.fetchFederatedResult(currentDbId);
+      document.getElementById('fedOrgs').textContent = res.participatingOrganizations;
+      document.getElementById('fedContribs').textContent = res.contributionCount;
+      document.getElementById('fedRecords').textContent = res.protectedTotalCount.toLocaleString();
+      document.getElementById('fedMean').textContent = res.globalProtectedMean.toFixed(4);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Register Modal Handlers
+  function openRegisterModal() {
+    document.getElementById('regOrgName').value = '';
+    document.getElementById('regDbIdentifier').value = '';
+    document.getElementById('regDbDesc').value = '';
+    document.getElementById('regError').style.display = 'none';
+    document.getElementById('registerModal').style.display = 'flex';
+  }
+  function closeRegisterModal() {
+    document.getElementById('registerModal').style.display = 'none';
+  }
+  async function submitDatabaseRegistration() {
+    const org = document.getElementById('regOrgName').value.trim();
+    const id = document.getElementById('regDbIdentifier').value.trim();
+    const desc = document.getElementById('regDbDesc').value.trim();
+    const errBox = document.getElementById('regError');
+
+    if (!org || !id) {
+      errBox.textContent = 'Organization name and identifier are required.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    try {
+      await OrgAuth.registerDatabase(org, id, desc);
+      closeRegisterModal();
+      document.getElementById('btnRegisterDb').style.display = 'none';
+      await loadOrganizationData();
+    } catch (err) {
+      errBox.textContent = err.message || 'Registration failed.';
+      errBox.style.display = 'block';
+    }
+  }
+</script>
+
+</body>
+</html>

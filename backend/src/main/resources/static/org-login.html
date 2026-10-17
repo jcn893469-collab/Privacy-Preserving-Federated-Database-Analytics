@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Login — Privacy-Preserving Federated Analytics</title>
+<link rel="stylesheet" href="css/org-portal.css" />
+<style>
+  .demo-accounts {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--text-2);
+  }
+  .demo-btn {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 6px 10px;
+    border: 1px dashed var(--border-strong);
+    background: #f8fafc;
+    border-radius: 4px;
+    text-align: left;
+    font-size: 11.5px;
+    color: var(--text-1);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .demo-btn:hover {
+    background: #eff6ff;
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2L3 6V11C3 16.5 6.8 21.3 12 22.5C17.2 21.3 21 16.5 21 11V6L12 2Z" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M9 12L11 14L15 10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-title">Privacy Federated Analytics</div>
+      <div class="brand-sub">Authentication Portal</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <a href="index.html" style="font-size:12px; color:var(--text-1); text-decoration:none;">Public Portal &rarr;</a>
+  </div>
+</header>
+
+<main class="narrow">
+  <div class="login-card">
+    <div class="login-title">Sign In</div>
+    <div class="login-sub">Role-Based Access Control (ADMIN &bull; DATA_OWNER)</div>
+
+    <div class="alert error" id="loginError" style="display:none; margin-top:12px;"></div>
+
+    <form id="loginForm" autocomplete="on" style="margin-top:16px;">
+      <div class="field-group" style="margin-bottom:14px;">
+        <label for="email">Email Address</label>
+        <input type="email" id="email" name="email" placeholder="user@vit.ac.in" required autofocus />
+      </div>
+      <div class="field-group" style="margin-bottom:18px;">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" required />
+      </div>
+      <button type="submit" class="btn-primary full" id="loginBtn">Sign In</button>
+    </form>
+
+    <div class="demo-accounts">
+      <div style="font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-1); margin-bottom:6px;">
+        Demo Evaluation Accounts:
+      </div>
+      <button type="button" class="demo-btn" onclick="fillCreds('admin@vit.ac.in', 'Admin@123')">
+        <strong>ADMIN:</strong> admin@vit.ac.in (Admin Console)
+      </button>
+      <button type="button" class="demo-btn" onclick="fillCreds('apollo@hospital.org', 'Apollo@123')">
+        <strong>DATA OWNER 1:</strong> apollo@hospital.org (Apollo Hospitals)
+      </button>
+      <button type="button" class="demo-btn" onclick="fillCreds('fortis@hospital.org', 'Fortis@123')">
+        <strong>DATA OWNER 2:</strong> fortis@hospital.org (Fortis Healthcare)
+      </button>
+    </div>
+
+    <div class="login-footer-note">
+      Raw datasets are never transmitted during sign-in. All credentials verified with Spring Security BCrypt &amp; JWT.
+    </div>
+  </div>
+</main>
+
+<script src="js/org-portal.js"></script>
+<script>
+  function fillCreds(e, p) {
+    document.getElementById('email').value = e;
+    document.getElementById('password').value = p;
+  }
+
+  const form = document.getElementById('loginForm');
+  const errorBox = document.getElementById('loginError');
+  const loginBtn = document.getElementById('loginBtn');
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.style.display = 'block';
+  }
+
+  function hideError() {
+    errorBox.style.display = 'none';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideError();
+
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Authenticating…';
+
+    try {
+      const data = await OrgAuth.login(email, password);
+
+      OrgAuth.setSession({
+        token: data.token,
+        email: data.email,
+        fullName: data.fullName,
+        role: data.role
+      });
+
+      if (data.role === 'ADMIN') {
+        window.location.href = 'admin-dashboard.html';
+      } else {
+        window.location.href = 'org-dashboard.html';
+      }
+    } catch (err) {
+      showError(err.message || 'Login failed. Please check credentials.');
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Sign In';
+    }
+  });
+</script>
+
+</body>
+</html>
