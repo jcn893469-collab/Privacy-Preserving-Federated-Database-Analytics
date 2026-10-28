@@ -46,7 +46,7 @@ public class FederatedDatabaseController {
 
     @PostMapping
     public ResponseEntity<?> registerDatabase(@Valid @RequestBody DatabaseRegistrationRequest request) {
-        User owner = currentUserService.requireUser();
+        User owner = currentUserService.requireAnyRole(User.Role.DATA_OWNER, User.Role.ADMIN);
         DatabaseResponse response = federatedDatabaseService.registerForOwner(request, owner);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -58,6 +58,13 @@ public class FederatedDatabaseController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("registeredAt").descending());
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
+        if (caller.getRole() == User.Role.DATA_OWNER) {
+            if ((query != null && !query.isBlank()) || active != null) {
+                return ResponseEntity.ok(federatedDatabaseService.searchOwned(caller, query, active, pageable));
+            }
+            return ResponseEntity.ok(federatedDatabaseService.getDatabasesOwnedByPaginated(caller, pageable));
+        }
         if (query != null || active != null) {
             return ResponseEntity.ok(federatedDatabaseService.searchAndFilter(query, active, pageable));
         }
@@ -66,6 +73,10 @@ public class FederatedDatabaseController {
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getDatabaseById(@PathVariable Long id) {
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
+        if (caller.getRole() == User.Role.DATA_OWNER) {
+            federatedDatabaseService.requireOwned(id, caller);
+        }
         return ResponseEntity.ok(federatedDatabaseService.getDatabaseById(id));
     }
 
@@ -73,7 +84,7 @@ public class FederatedDatabaseController {
     public ResponseEntity<?> updateDatabase(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
-        User caller = currentUserService.requireUser();
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
         String orgName = body.get("organizationName");
         String description = body.get("description");
         DatabaseResponse response = federatedDatabaseService.updateDatabase(id, orgName, description, caller);
@@ -82,7 +93,7 @@ public class FederatedDatabaseController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteDatabase(@PathVariable Long id) {
-        User caller = currentUserService.requireUser();
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
         federatedDatabaseService.deleteDatabase(id, caller);
         return ResponseEntity.ok(Map.of("message", "Database deleted successfully", "id", id));
     }

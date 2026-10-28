@@ -33,6 +33,14 @@ const OrgAuth = {
     localStorage.removeItem(ORG_AUTH_STORAGE_KEY);
   },
 
+  notifyPublicDashboardUpdated() {
+    try {
+      localStorage.setItem('fpa-public-dashboard-refresh', String(Date.now()));
+    } catch (error) {
+      console.warn('Could not notify other tabs to refresh public dashboard data:', error);
+    }
+  },
+
   isDataOwnerSession() {
     const s = this.getSession();
     return !!(s && s.token && s.role === 'DATA_OWNER');
@@ -70,6 +78,18 @@ const OrgAuth = {
     return data;
   },
 
+  handleAuthFailure(status, message) {
+    if (status === 401) {
+      this.clearSession();
+      window.location.href = 'org-login.html?reason=session-expired';
+      throw new Error(message || 'Your session has expired. Please log in again.');
+    }
+    if (status === 403) {
+      throw new Error(message || 'Access denied. You do not have permission for this action.');
+    }
+    throw new Error(message || 'Authentication failed.');
+  },
+
   async fetchMyDatabases() {
     const session = this.getSession();
     if (!session || !session.token) throw new AuthError('Not authenticated.');
@@ -77,7 +97,12 @@ const OrgAuth = {
     const res = await fetch('/api/databases/mine', {
       headers: { Authorization: `Bearer ${session.token}` }
     });
-    if (res.status === 401 || res.status === 403) throw new AuthError('Session expired. Please log in.');
+    if (res.status === 401) {
+      this.handleAuthFailure(401, 'Session expired. Please log in.');
+    }
+    if (res.status === 403) {
+      this.handleAuthFailure(403, 'Access denied. You do not have permission for this action.');
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `Request failed (${res.status})`);
@@ -99,6 +124,7 @@ const OrgAuth = {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || `Registration failed (${res.status})`);
+    this.notifyPublicDashboardUpdated();
     return body;
   },
 
@@ -159,10 +185,16 @@ const OrgAuth = {
     });
 
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 || res.status === 403) throw new AuthError('Unauthorized.');
+    if (res.status === 401) {
+      this.handleAuthFailure(401, 'Session expired. Please log in.');
+    }
+    if (res.status === 403) {
+      this.handleAuthFailure(403, 'Access denied. You do not have permission for this action.');
+    }
     if (!res.ok) {
       throw new Error(data.error || `Contribution rejected (${res.status})`);
     }
+    this.notifyPublicDashboardUpdated();
     return data;
   }
 };

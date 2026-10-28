@@ -38,6 +38,9 @@ public class FederatedAggregationService {
 
     @Transactional
     public FederatedResult executeAndPersistFederatedRun(String targetMetric) {
+        if (targetMetric != null && !"overall".equalsIgnoreCase(targetMetric.trim())) {
+            throw new IllegalArgumentException("Only the overall federated mean is currently supported");
+        }
         User executor = currentUserService.requireUser();
         List<AnalyticsContribution> contributions = contributionRepository.findAll();
 
@@ -92,7 +95,8 @@ public class FederatedAggregationService {
 
     @Transactional(readOnly = true)
     public Page<FederatedResult> getHistoricalRuns(String query, Pageable pageable) {
-        return federatedResultRepository.searchRuns(query, pageable);
+        String normalizedQuery = query == null || query.isBlank() ? "" : query.trim();
+        return federatedResultRepository.searchRuns(normalizedQuery, pageable);
     }
 
     @Transactional(readOnly = true)

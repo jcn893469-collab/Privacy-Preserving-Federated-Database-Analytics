@@ -59,6 +59,11 @@
     color: var(--text-2); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
   }
   .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .section-heading { display: flex; align-items: center; gap: 12px; }
+  .section-heading .section-title { flex: 1; }
+  .dashboard-message { margin: 0 0 12px; color: var(--text-1); }
+  .dashboard-message.error { color: var(--red); }
+  .empty-state { padding: 18px; text-align: center; color: var(--text-2); }
 
   .hero-banner {
     background: linear-gradient(135deg, #1e293b, #0f172a);
@@ -166,7 +171,11 @@
 
   <!-- REAL DATABASE METRICS -->
   <section>
-    <div class="section-title">Live Network Status (PostgreSQL Database)</div>
+    <div class="section-heading">
+      <div class="section-title">Live Network Status (PostgreSQL Database)</div>
+      <button id="refreshDashboard" class="btn-link org" type="button" onclick="loadPublicData()">Refresh</button>
+    </div>
+    <div id="dashboardMessage" class="dashboard-message" role="status" aria-live="polite">Loading live database metrics…</div>
     <div class="cards-grid">
       <div class="card metric-card">
         <div class="label">Participating Organizations</div>
@@ -206,7 +215,9 @@
             <th>Status</th>
           </tr>
         </thead>
-        <tbody id="dbListBody"></tbody>
+        <tbody id="dbListBody">
+          <tr><td class="empty-state" colspan="6">Loading registered databases…</td></tr>
+        </tbody>
       </table>
     </div>
   </section>
@@ -235,33 +246,66 @@
 </main>
 
 <script>
+  function formatNumber(value, fractionDigits = 2) {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? number.toLocaleString(undefined, { maximumFractionDigits: fractionDigits })
+      : '—';
+  }
+
+  function showDashboardError(message) {
+    document.getElementById('dashboardMessage').textContent = message;
+    document.getElementById('dashboardMessage').className = 'dashboard-message error';
+    for (const id of ['statOrgs', 'statContribs', 'statRecords', 'statSum', 'statMean', 'statActiveOrgs']) {
+      document.getElementById(id).textContent = '—';
+    }
+    document.getElementById('dbListBody').innerHTML =
+      `<tr><td class="empty-state" colspan="6">${escapeHtml(message)}</td></tr>`;
+  }
+
   async function loadPublicData() {
+    const refreshButton = document.getElementById('refreshDashboard');
+    refreshButton.disabled = true;
+    refreshButton.textContent = 'Refreshing…';
+    document.getElementById('dashboardMessage').textContent = 'Loading live database metrics…';
+    document.getElementById('dashboardMessage').className = 'dashboard-message';
     try {
-      const res = await fetch('/api/analytics/results/global');
+      const res = await fetch('/api/public/dashboard', { headers: { Accept: 'application/json' } });
+      if (!res.ok) {
+        throw new Error(`Dashboard API returned HTTP ${res.status}`);
+      }
       const data = await res.json();
-      document.getElementById('statOrgs').textContent = data.participatingOrganizations;
-      document.getElementById('statContribs').textContent = data.contributionCount;
-      document.getElementById('statRecords').textContent = Number(data.protectedTotalCount).toLocaleString();
-      document.getElementById('statSum').textContent = Number(data.protectedAggregateSum).toLocaleString(undefined, { maximumFractionDigits: 2 });
-      document.getElementById('statMean').textContent = Number(data.globalProtectedMean).toFixed(4);
-
-      const dbRes = await fetch('/api/databases');
-      const dbs = await dbRes.json();
-      const list = dbs.content || (Array.isArray(dbs) ? dbs : []);
-      document.getElementById('statActiveOrgs').textContent = `${list.filter(d => d.active).length} active nodes`;
-
-      document.getElementById('dbListBody').innerHTML = list.map(d => `
+      const list = Array.isArray(data.databases) ? data.databases : [];
+      document.getElementById('statOrgs').textContent = formatNumber(data.totalOrganizations, 0);
+      document.getElementById('statContribs').textContent = formatNumber(data.totalContributions, 0);
+      document.getElementById('statRecords').textContent = `${formatNumber(data.totalProtectedRecords, 0)} records protected`;
+      document.getElementById('statSum').textContent = formatNumber(data.globalProtectedSum);
+      document.getElementById('statMean').textContent = data.globalProtectedMean == null
+        ? 'No protected records'
+        : formatNumber(data.globalProtectedMean, 4);
+      document.getElementById('statActiveOrgs').textContent =
+        `${formatNumber(data.activeOrganizations, 0)} active nodes`;
+      document.getElementById('dbListBody').innerHTML = list.length ? list.map(d => `
         <tr>
           <td><strong>${escapeHtml(d.organizationName)}</strong></td>
           <td>${escapeHtml(d.dbIdentifier)}</td>
           <td>${escapeHtml(d.ownerEmail)}</td>
-          <td>${Number(d.privacyEpsilonBudget).toFixed(2)}</td>
-          <td>${Number(d.privacyEpsilonSpent).toFixed(4)}</td>
+          <td>${formatNumber(d.privacyEpsilonBudget, 2)}</td>
+          <td>${formatNumber(d.privacyEpsilonSpent, 4)}</td>
           <td><span class="badge ${d.active ? 'active' : 'inactive'}">${d.active ? 'Active' : 'Inactive'}</span></td>
         </tr>
-      `).join('');
-    } catch (e) {
-      console.error(e);
+      `).join('') : '<tr><td class="empty-state" colspan="6">No organization databases are registered yet.</td></tr>';
+      document.getElementById('dashboardMessage').textContent = list.length === 0
+        ? 'No organization databases are registered yet.'
+        : data.totalContributions === 0
+          ? 'Registered organizations loaded. No protected contributions have been submitted yet.'
+          : 'Live values loaded from PostgreSQL.';
+    } catch (error) {
+      console.error('Unable to load public dashboard data:', error);
+      showDashboardError(`Unable to load live network data. ${error.message || 'Check that the API and PostgreSQL are available.'}`);
+    } finally {
+      refreshButton.disabled = false;
+      refreshButton.textContent = 'Refresh';
     }
   }
 
@@ -270,6 +314,9 @@
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  window.addEventListener('storage', event => {
+    if (event.key === 'fpa-public-dashboard-refresh') loadPublicData();
+  });
   loadPublicData();
 </script>
 

@@ -8,6 +8,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Arrays;
+
 @Component
 public class CurrentUserService {
 
@@ -28,9 +30,16 @@ public class CurrentUserService {
     }
 
     public User requireRole(User.Role role) {
+        return requireAnyRole(role);
+    }
+
+    public User requireAnyRole(User.Role... roles) {
         User user = requireUser();
-        if (user.getRole() != role) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This action requires role " + role);
+        if (Arrays.stream(roles).noneMatch(role -> role == user.getRole())) {
+            throw new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "This action requires one of the roles " + Arrays.toString(roles)
+            );
         }
         if (!user.isActive()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This account is inactive");

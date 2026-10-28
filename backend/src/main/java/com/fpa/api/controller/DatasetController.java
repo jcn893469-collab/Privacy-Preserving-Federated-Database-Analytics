@@ -2,6 +2,9 @@ package com.fpa.api.controller;
 
 import com.fpa.domain.entity.DatasetColumnSchema;
 import com.fpa.domain.entity.DatasetMetadata;
+import com.fpa.domain.entity.User;
+import com.fpa.security.CurrentUserService;
+import com.fpa.service.FederatedDatabaseService;
 import com.fpa.service.DatasetService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -26,9 +29,15 @@ import java.util.Map;
 public class DatasetController {
 
     private final DatasetService datasetService;
+    private final FederatedDatabaseService federatedDatabaseService;
+    private final CurrentUserService currentUserService;
 
-    public DatasetController(DatasetService datasetService) {
+    public DatasetController(DatasetService datasetService,
+                             FederatedDatabaseService federatedDatabaseService,
+                             CurrentUserService currentUserService) {
         this.datasetService = datasetService;
+        this.federatedDatabaseService = federatedDatabaseService;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping
@@ -48,6 +57,10 @@ public class DatasetController {
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
+        if (caller.getRole() == User.Role.DATA_OWNER) {
+            federatedDatabaseService.requireOwned(databaseId, caller);
+        }
         if (query != null && !query.isBlank()) {
             Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
             return ResponseEntity.ok(datasetService.searchDatasets(databaseId, query, pageable));
@@ -70,6 +83,8 @@ public class DatasetController {
 
     @GetMapping("/{datasetId}/columns")
     public ResponseEntity<?> getColumns(@PathVariable Long datasetId) {
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
+        datasetService.verifyDatasetAccess(datasetId, caller);
         return ResponseEntity.ok(datasetService.getColumnsForDataset(datasetId));
     }
 

@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface AnalyticsContributionRepository extends JpaRepository<AnalyticsContribution, Long> {
@@ -17,15 +18,40 @@ public interface AnalyticsContributionRepository extends JpaRepository<Analytics
 
     Page<AnalyticsContribution> findByDatabaseId(Long databaseId, Pageable pageable);
 
+    Page<AnalyticsContribution> findByDatabaseIdIn(Collection<Long> databaseIds, Pageable pageable);
+
     @Query("SELECT ac FROM AnalyticsContribution ac " +
            "JOIN FETCH ac.database db " +
-           "WHERE (:databaseId IS NULL OR db.id = :databaseId) " +
-           "AND (:startDate IS NULL OR ac.submittedAt >= :startDate) " +
-           "AND (:endDate IS NULL OR ac.submittedAt <= :endDate) " +
+           "WHERE db.owner.id = :ownerId " +
+           "AND (:filterDatabase = false OR db.id = :databaseId) " +
+           "AND (:filterStartDate = false OR ac.submittedAt >= :startDate) " +
+           "AND (:filterEndDate = false OR ac.submittedAt <= :endDate) " +
+           "AND (LOWER(db.organizationName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "     LOWER(db.dbIdentifier) LIKE LOWER(CONCAT('%', :query, '%'))) " +
+           "ORDER BY ac.submittedAt DESC")
+    Page<AnalyticsContribution> searchOwned(
+            @Param("ownerId") Long ownerId,
+            @Param("filterDatabase") boolean filterDatabase,
+            @Param("databaseId") Long databaseId,
+            @Param("filterStartDate") boolean filterStartDate,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("filterEndDate") boolean filterEndDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("query") String query,
+            Pageable pageable);
+
+    @Query("SELECT ac FROM AnalyticsContribution ac " +
+           "JOIN FETCH ac.database db " +
+           "WHERE (:filterDatabase = false OR db.id = :databaseId) " +
+           "AND (:filterStartDate = false OR ac.submittedAt >= :startDate) " +
+           "AND (:filterEndDate = false OR ac.submittedAt <= :endDate) " +
            "ORDER BY ac.submittedAt DESC")
     Page<AnalyticsContribution> searchAndFilter(
+            @Param("filterDatabase") boolean filterDatabase,
             @Param("databaseId") Long databaseId,
+            @Param("filterStartDate") boolean filterStartDate,
             @Param("startDate") LocalDateTime startDate,
+            @Param("filterEndDate") boolean filterEndDate,
             @Param("endDate") LocalDateTime endDate,
             Pageable pageable);
 

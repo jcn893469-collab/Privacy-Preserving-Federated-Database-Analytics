@@ -19,23 +19,42 @@ public interface FederatedDatabaseRepository extends JpaRepository<FederatedData
 
     Page<FederatedDatabase> findByOwnerId(Long ownerId, Pageable pageable);
 
+    @Query("SELECT db FROM FederatedDatabase db " +
+           "JOIN FETCH db.owner u " +
+           "WHERE db.owner.id = :ownerId " +
+           "AND (LOWER(db.organizationName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "     LOWER(db.dbIdentifier) LIKE LOWER(CONCAT('%', :query, '%'))) " +
+           "AND (:filterActive = false OR db.active = :active) " +
+           "ORDER BY db.registeredAt DESC")
+    Page<FederatedDatabase> searchOwned(
+            @Param("ownerId") Long ownerId,
+            @Param("query") String query,
+            @Param("filterActive") boolean filterActive,
+            @Param("active") Boolean active,
+            Pageable pageable);
+
     Optional<FederatedDatabase> findFirstByOwnerIdOrderByRegisteredAtAsc(Long ownerId);
 
     long countByActiveTrue();
+
+    @Query("SELECT COUNT(DISTINCT db.organizationName) FROM FederatedDatabase db")
+    long countDistinctOrganizationNames();
+
+    List<FederatedDatabase> findAllByOrderByRegisteredAtDesc();
 
     @Query("SELECT DISTINCT d.organizationName FROM FederatedDatabase d")
     List<String> findDistinctOrganizationNames();
 
     @Query("SELECT db FROM FederatedDatabase db " +
            "JOIN FETCH db.owner u " +
-           "WHERE (:query IS NULL OR " +
-           "       LOWER(db.organizationName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "WHERE (LOWER(db.organizationName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "       LOWER(db.dbIdentifier) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "       LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))) " +
-           "AND (:active IS NULL OR db.active = :active) " +
+           "AND (:filterActive = false OR db.active = :active) " +
            "ORDER BY db.registeredAt DESC")
     Page<FederatedDatabase> searchAndFilter(
             @Param("query") String query,
+            @Param("filterActive") boolean filterActive,
             @Param("active") Boolean active,
             Pageable pageable);
 

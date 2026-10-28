@@ -114,6 +114,10 @@
     errorBox.style.display = 'none';
   }
 
+  if (new URLSearchParams(window.location.search).get('reason') === 'session-expired') {
+    showError('Your session expired. Please sign in again.');
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     hideError();
@@ -134,10 +138,12 @@
         role: data.role
       });
 
-      if (data.role === 'ADMIN') {
+      if (data.role === 'ADMIN' || data.role === 'RESEARCHER') {
         window.location.href = 'admin-dashboard.html';
-      } else {
+      } else if (data.role === 'DATA_OWNER') {
         window.location.href = 'org-dashboard.html';
+      } else {
+        throw new Error('This account has no supported dashboard role.');
       }
     } catch (err) {
       showError(err.message || 'Login failed. Please check credentials.');

@@ -163,7 +163,9 @@ public class AnalyticsContributionService {
     @Transactional(readOnly = true)
     public Page<ContributionResponse> searchAndFilterContributions(
             Long databaseId, LocalDateTime startDate, LocalDateTime endDate, Pageable pageable) {
-        return analyticsContributionRepository.searchAndFilter(databaseId, startDate, endDate, pageable)
+        return analyticsContributionRepository.searchAndFilter(
+            databaseId != null, databaseId, startDate != null, startDate, endDate != null, endDate, pageable
+        )
                 .map(this::toResponse);
     }
 
@@ -182,18 +184,41 @@ public class AnalyticsContributionService {
 
     @Transactional(readOnly = true)
     public Page<ContributionResponse> getPaginatedContributionsOwnedBy(User owner, Pageable pageable) {
-        List<FederatedDatabase> databases = federatedDatabaseRepository.findByOwnerId(owner.getId());
-        if (databases.isEmpty()) {
+        List<Long> databaseIds = federatedDatabaseRepository.findByOwnerId(owner.getId()).stream()
+            .map(FederatedDatabase::getId)
+            .toList();
+        if (databaseIds.isEmpty()) {
             return Page.empty(pageable);
         }
-        Long dbId = databases.get(0).getId();
-        return analyticsContributionRepository.findByDatabaseId(dbId, pageable).map(this::toResponse);
+        return analyticsContributionRepository.findByDatabaseIdIn(databaseIds, pageable).map(this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ContributionResponse> searchOwnedContributions(
+            User owner, Long databaseId, LocalDateTime startDate, LocalDateTime endDate,
+            String query, Pageable pageable) {
+        String normalizedQuery = query == null || query.isBlank() ? "" : query.trim();
+        return analyticsContributionRepository.searchOwned(
+            owner.getId(), databaseId != null, databaseId,
+            startDate != null, startDate, endDate != null, endDate, normalizedQuery, pageable
+        ).map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
     public ContributionResponse getContributionById(Long id) {
         return toResponse(analyticsContributionRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("Contribution not found with id: " + id)));
+    }
+
+    @Transactional(readOnly = true)
+    public ContributionResponse getContributionById(Long id, User caller) {
+        AnalyticsContribution contribution = analyticsContributionRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Contribution not found with id: " + id));
+        if (caller.getRole() != User.Role.ADMIN
+                && !contribution.getDatabase().getOwner().getId().equals(caller.getId())) {
+            throw new SecurityException("You do not have permission to view this contribution");
+        }
+        return toResponse(contribution);
     }
 
     @Transactional(readOnly = true)

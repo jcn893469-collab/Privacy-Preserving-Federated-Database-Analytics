@@ -40,6 +40,11 @@ public class AuditLogService {
     public Page<AuditLog> searchAndFilter(String action, String entityType,
                                           LocalDateTime startDate, LocalDateTime endDate,
                                           String query, Pageable pageable) {
-        return auditLogRepository.searchAndFilter(action, entityType, startDate, endDate, query, pageable);
+        String normalizedQuery = query == null || query.isBlank() ? "" : query.trim();
+        return auditLogRepository.searchAndFilter(
+            action != null && !action.isBlank(), action == null ? "" : action.trim(),
+            entityType != null && !entityType.isBlank(), entityType == null ? "" : entityType.trim(),
+            startDate != null, startDate, endDate != null, endDate, normalizedQuery, pageable
+        );
     }
 }

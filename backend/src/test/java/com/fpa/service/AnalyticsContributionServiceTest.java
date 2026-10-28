@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -160,5 +161,34 @@ class AnalyticsContributionServiceTest {
         request.setNoiseSigma(BigDecimal.valueOf(5.0));
 
         assertThrows(PrivacyBudgetExceededException.class, () -> contributionService.submitContribution(request));
+    }
+
+    @Test
+    void dataOwnerCannotReadAnotherOrganizationsContribution() {
+        User otherOwner = User.builder()
+                .fullName("Other Owner")
+                .email("other@example.org")
+                .passwordHash("hash")
+                .role(User.Role.DATA_OWNER)
+                .active(true)
+                .createdAt(LocalDateTime.now())
+                .build();
+        otherOwner.setId(2L);
+        FederatedDatabase otherDatabase = FederatedDatabase.builder()
+                .organizationName("Other Hospital")
+                .dbIdentifier("other-db")
+                .owner(otherOwner)
+                .active(true)
+                .registeredAt(LocalDateTime.now())
+                .privacyEpsilonBudget(BigDecimal.TEN)
+                .privacyDeltaBudget(BigDecimal.valueOf(1e-5))
+                .privacyEpsilonSpent(BigDecimal.ZERO)
+                .build();
+        AnalyticsContribution foreignContribution = AnalyticsContribution.builder()
+                .database(otherDatabase)
+                .build();
+        when(contributionRepository.findById(77L)).thenReturn(Optional.of(foreignContribution));
+
+        assertThrows(SecurityException.class, () -> contributionService.getContributionById(77L, owner));
     }
 }

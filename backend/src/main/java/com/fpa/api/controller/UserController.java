@@ -63,6 +63,7 @@ public class UserController {
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
+        currentUserService.requireRole(User.Role.ADMIN);
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         if (query != null || role != null || active != null) {
             return ResponseEntity.ok(userService.searchAndFilter(query, role, active, pageable));
@@ -72,6 +73,7 @@ public class UserController {
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getUserById(@PathVariable Long id) {
+        currentUserService.requireRole(User.Role.ADMIN);
         return ResponseEntity.ok(userService.getUserById(id));
     }
 

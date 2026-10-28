@@ -107,6 +107,16 @@ public class DatasetService {
         return columnSchemaRepository.findByDatasetId(datasetId);
     }
 
+    @Transactional(readOnly = true)
+    public void verifyDatasetAccess(Long datasetId, User caller) {
+        DatasetMetadata dataset = datasetMetadataRepository.findById(datasetId)
+                .orElseThrow(() -> new IllegalArgumentException("Dataset not found with id: " + datasetId));
+        if (caller.getRole() != User.Role.ADMIN
+                && !dataset.getDatabase().getOwner().getId().equals(caller.getId())) {
+            throw new SecurityException("You do not have permission to view this dataset");
+        }
+    }
+
     @Transactional
     public void deleteDataset(Long datasetId) {
         User user = currentUserService.requireUser();

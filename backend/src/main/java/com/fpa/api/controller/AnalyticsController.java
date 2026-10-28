@@ -3,6 +3,7 @@ package com.fpa.api.controller;
 import com.fpa.api.dto.ContributionRequest;
 import com.fpa.api.dto.ContributionResponse;
 import com.fpa.api.dto.FederatedResultResponse;
+import com.fpa.api.dto.FederatedRunResponse;
 import com.fpa.api.dto.PrivacyStatusResponse;
 import com.fpa.domain.entity.FederatedDatabase;
 import com.fpa.domain.entity.FederatedResult;
@@ -67,6 +68,15 @@ public class AnalyticsController {
             @RequestParam(defaultValue = "10") int size) {
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("submittedAt").descending());
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
+        if (caller.getRole() == User.Role.DATA_OWNER) {
+            if (databaseId != null) {
+                federatedDatabaseService.requireOwned(databaseId, caller);
+            }
+            return ResponseEntity.ok(analyticsContributionService.searchOwnedContributions(
+                caller, databaseId, startDate, endDate, query, pageable
+            ));
+        }
         if (query != null && !query.isBlank()) {
             return ResponseEntity.ok(analyticsContributionService.searchGlobalContributions(query, pageable));
         }
@@ -78,7 +88,8 @@ public class AnalyticsController {
 
     @GetMapping("/contributions/{id}")
     public ResponseEntity<?> getContributionById(@PathVariable Long id) {
-        return ResponseEntity.ok(analyticsContributionService.getContributionById(id));
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
+        return ResponseEntity.ok(analyticsContributionService.getContributionById(id, caller));
     }
 
     @DeleteMapping("/contributions/{id}")
@@ -89,20 +100,26 @@ public class AnalyticsController {
 
     @GetMapping("/results/{databaseId}")
     public ResponseEntity<?> getFederatedResult(@PathVariable Long databaseId) {
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER, User.Role.RESEARCHER);
+        if (caller.getRole() == User.Role.DATA_OWNER) {
+            federatedDatabaseService.requireOwned(databaseId, caller);
+        }
         FederatedResultResponse response = analyticsContributionService.computeFederatedResult(databaseId);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/results/global")
     public ResponseEntity<?> getGlobalFederatedResult() {
+        currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.RESEARCHER);
         FederatedResultResponse response = analyticsContributionService.computeGlobalFederatedResult();
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/results/runs")
     public ResponseEntity<?> executeFederatedRun(@RequestParam(defaultValue = "overall") String metric) {
+        currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.RESEARCHER);
         FederatedResult run = federatedAggregationService.executeAndPersistFederatedRun(metric);
-        return ResponseEntity.status(HttpStatus.CREATED).body(run);
+        return ResponseEntity.status(HttpStatus.CREATED).body(FederatedRunResponse.from(run));
     }
 
     @GetMapping("/results/runs")
@@ -110,17 +127,24 @@ public class AnalyticsController {
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
+        currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.RESEARCHER);
         Pageable pageable = PageRequest.of(page, size, Sort.by("executedAt").descending());
-        return ResponseEntity.ok(federatedAggregationService.getHistoricalRuns(query, pageable));
+        return ResponseEntity.ok(federatedAggregationService.getHistoricalRuns(query, pageable)
+            .map(FederatedRunResponse::from));
     }
 
     @GetMapping("/results/runs/{id}")
     public ResponseEntity<?> getRunById(@PathVariable Long id) {
-        return ResponseEntity.ok(federatedAggregationService.getRunById(id));
+        currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.RESEARCHER);
+        return ResponseEntity.ok(FederatedRunResponse.from(federatedAggregationService.getRunById(id)));
     }
 
     @GetMapping("/privacy-status/{databaseId}")
     public ResponseEntity<?> getPrivacyStatus(@PathVariable Long databaseId) {
+        User caller = currentUserService.requireAnyRole(User.Role.ADMIN, User.Role.DATA_OWNER);
+        if (caller.getRole() == User.Role.DATA_OWNER) {
+            federatedDatabaseService.requireOwned(databaseId, caller);
+        }
         FederatedDatabase db = federatedDatabaseService.require(databaseId);
         PrivacyStatusResponse status = analyticsContributionService.privacyStatusFor(db);
         return ResponseEntity.ok(status);

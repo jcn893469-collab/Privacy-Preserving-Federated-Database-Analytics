@@ -60,7 +60,11 @@ public class UserService {
     @Transactional(readOnly = true)
     public Page<UserResponse> searchAndFilter(String query, String roleStr, Boolean active, Pageable pageable) {
         User.Role role = (roleStr != null && !roleStr.isBlank()) ? parseRole(roleStr) : null;
-        return userRepository.searchAndFilter(query, role, active, pageable).map(this::toResponse);
+        String normalizedQuery = query == null || query.isBlank() ? "" : query.trim();
+        return userRepository.searchAndFilter(
+            normalizedQuery, role != null, role == null ? User.Role.ADMIN : role,
+            active != null, active != null && active, pageable
+        ).map(this::toResponse);
     }
 
     @Transactional(readOnly = true)

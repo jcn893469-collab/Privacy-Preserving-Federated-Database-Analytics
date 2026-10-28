@@ -138,10 +138,10 @@ spring:
 
 ```bash
 cd backend
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-Flyway migrations run automatically — all 10 migrations (V1–V10) apply in order, creating tables, views, trigger, and seed data.
+Flyway applies the common schema migrations (V1–V9) in every profile. The `dev` profile additionally applies V10, an idempotent demo seed for local use. The Docker Compose default profile is `prod`, so it does not create demo accounts or metadata. Existing databases that already recorded V10 keep their data; it is not re-applied in non-development profiles.
 
 ### 4. Open frontend
 
@@ -158,11 +158,18 @@ Navigate to: `http://localhost:8080/org-login.html`
 | **Data Owner 2** | `fortis@hospital.org` | `Fortis@123` |
 | **Researcher** | `researcher@vit.ac.in` | `Research@123` |
 
-> Passwords are stored as BCrypt hashes in the database (migration V10).
+> These credentials are created only by the `dev` profile's V10 seed. Do not use them in production.
 
 ---
 
 ## API Overview
+
+### Public dashboard
+| Method | Path | Access |
+|---|---|---|
+| `GET` | `/api/public/dashboard` | Public, read-only aggregate metrics and registered database metadata |
+
+The landing page loads its metrics and database rows from this endpoint. It returns persisted protected sums and counts only; the protected mean is `null` when there are no protected records. Database responses are limited to organization name, database identifier, owner email, epsilon budget/spend, and active status.
 
 All protected endpoints require `Authorization: Bearer <JWT>` header.
 
@@ -170,33 +177,35 @@ All protected endpoints require `Authorization: Bearer <JWT>` header.
 | Method | Path | Access |
 |---|---|---|
 | `POST` | `/api/auth/login` | Public |
-| `POST` | `/api/auth/register` | Public |
 | `GET` | `/api/auth/me` | Authenticated |
 
-### Contributions
+### Analytics contributions and results
 | Method | Path | Access |
 |---|---|---|
-| `POST` | `/api/analytics/contribute` | DATA_OWNER |
-| `GET` | `/api/analytics/contributions` | DATA_OWNER (own) |
-| `GET` | `/api/analytics/contributions/search` | ADMIN |
-| `GET` | `/api/analytics/federated-result/{dbId}` | RESEARCHER, ADMIN |
-| `POST` | `/api/analytics/run-federated/{dbId}` | ADMIN |
+| `POST` | `/api/analytics/contributions` | DATA_OWNER |
+| `GET` | `/api/analytics/contributions` | ADMIN (all), DATA_OWNER (own) |
+| `GET` / `DELETE` | `/api/analytics/contributions/{id}` | ADMIN; DATA_OWNER (own) |
+| `GET` | `/api/analytics/results/{databaseId}` | ADMIN, RESEARCHER; DATA_OWNER (own database) |
+| `GET` | `/api/analytics/results/global` | ADMIN, RESEARCHER |
+| `POST` / `GET` | `/api/analytics/results/runs` | ADMIN, RESEARCHER |
+| `GET` | `/api/analytics/privacy-status/{databaseId}` | ADMIN; DATA_OWNER (own database) |
 
 ### Databases
 | Method | Path | Access |
 |---|---|---|
-| `POST` | `/api/databases` | DATA_OWNER |
-| `GET` | `/api/databases` | Authenticated |
-| `PUT` | `/api/databases/{id}` | ADMIN |
-| `DELETE` | `/api/databases/{id}` | ADMIN |
+| `POST` | `/api/databases` | ADMIN, DATA_OWNER |
+| `GET` | `/api/databases` | ADMIN (all), DATA_OWNER (own) |
+| `GET` | `/api/databases/{id}` | ADMIN; DATA_OWNER (own) |
+| `PUT` / `DELETE` | `/api/databases/{id}` | ADMIN; DATA_OWNER (own) |
 
 ### Users (Admin)
 | Method | Path | Access |
 |---|---|---|
 | `GET` | `/api/users` | ADMIN |
-| `POST` | `/api/users` | ADMIN |
+| `POST` | `/api/users/admin` | ADMIN |
 | `PUT` | `/api/users/{id}` | ADMIN |
 | `DELETE` | `/api/users/{id}` | ADMIN |
+| `POST` | `/api/users/register` | Public (DATA_OWNER registration only) |
 
 ### Admin
 | Method | Path | Access |
@@ -204,6 +213,13 @@ All protected endpoints require `Authorization: Bearer <JWT>` header.
 | `GET` | `/api/admin/status` | ADMIN |
 | `GET` | `/api/admin/views/contribution-summary` | ADMIN |
 | `GET` | `/api/admin/audit-logs` | ADMIN |
+
+The seven-tab admin dashboard is available to ADMIN. RESEARCHER accounts are routed
+to its read-only federated-runs view and can start the currently supported
+`overall` protected-mean run. DATA_OWNER accounts use the organization dashboard
+to manage their own databases, submit and review their own protected contributions,
+and inspect results for their own database. A forbidden response does not clear a
+valid JWT; only an unauthorized response triggers sign-in again.
 
 ---
 
@@ -216,7 +232,7 @@ Raw data **never** leaves the browser. The client-side pipeline in `org-portal.j
 3. **Data Clipping** — clips each value to `[lower, upper]` to bound global sensitivity
 4. **Gaussian Noise** — adds `𝒩(0, σ²)` noise where `σ = sensitivity × √(2 ln(1.25/δ)) / ε`
 5. **RDP Accounting** — tracks per-query Rényi DP budget across multiple queries
-6. **Submit aggregate** — only the noisy count/mean/variance sent to `/api/analytics/contribute`
+6. **Submit aggregate** — only privacy-protected aggregate values are sent to `/api/analytics/contributions`
 
 The server re-validates the Gaussian noise parameters and records a `PrivacyBudgetLedger` entry, preventing budget exhaustion attacks.
 
@@ -268,7 +284,7 @@ See [`docs/relational-schema.md`](docs/relational-schema.md) for full table defi
 | V7 | `privacy_budget_ledger` + `federated_result` + `federated_run_participant` |
 | V8 | `audit_log` table + trigger + audit function |
 | V9 | `v_organization_contribution_summary` + `v_federated_analytics_overview` views + stored function |
-| V10 | Seed data (4 users, 2 databases, demo data) |
+| V10 (`dev` only) | Demonstration accounts, registered databases, and metadata (no fabricated contributions) |
 
 ### Backup & Restore
 

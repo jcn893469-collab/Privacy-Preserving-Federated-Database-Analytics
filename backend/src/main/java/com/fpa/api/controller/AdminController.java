@@ -1,6 +1,7 @@
 package com.fpa.api.controller;
 
 import com.fpa.api.dto.AdminSystemStatusResponse;
+import com.fpa.api.dto.AuditLogResponse;
 import com.fpa.domain.entity.AuditLog;
 import com.fpa.domain.entity.OrganizationContributionSummaryView;
 import com.fpa.domain.entity.User;
@@ -57,7 +58,7 @@ public class AdminController {
     }
 
     @GetMapping("/audit-logs")
-    public ResponseEntity<Page<AuditLog>> getAuditLogs(
+    public ResponseEntity<Page<AuditLogResponse>> getAuditLogs(
             @RequestParam(required = false) String action,
             @RequestParam(required = false) String entityType,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
@@ -67,6 +68,7 @@ public class AdminController {
             @RequestParam(defaultValue = "15") int size) {
         currentUserService.requireRole(User.Role.ADMIN);
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        return ResponseEntity.ok(auditLogService.searchAndFilter(action, entityType, startDate, endDate, query, pageable));
+        return ResponseEntity.ok(auditLogService.searchAndFilter(action, entityType, startDate, endDate, query, pageable)
+            .map(AuditLogResponse::from));
     }
 }

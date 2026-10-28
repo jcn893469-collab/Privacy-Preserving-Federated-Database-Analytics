@@ -15,8 +15,7 @@ public interface FederatedResultRepository extends JpaRepository<FederatedResult
 
     @Query("SELECT fr FROM FederatedResult fr " +
            "LEFT JOIN FETCH fr.executedBy u " +
-           "WHERE (:query IS NULL OR " +
-           "       LOWER(fr.runIdentifier) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "WHERE (LOWER(fr.runIdentifier) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "       LOWER(fr.targetMetric) LIKE LOWER(CONCAT('%', :query, '%'))) " +
            "ORDER BY fr.executedAt DESC")
     Page<FederatedResult> searchRuns(@Param("query") String query, Pageable pageable);

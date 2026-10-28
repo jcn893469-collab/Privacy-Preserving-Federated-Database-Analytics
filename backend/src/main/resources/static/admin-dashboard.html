@@ -70,17 +70,19 @@
 <main>
 
   <div class="nav-tabs">
-    <div class="nav-tab active" onclick="switchTab('tabOverview')">Overview &amp; Metrics</div>
-    <div class="nav-tab" onclick="switchTab('tabViews')">Database Views (PostgreSQL)</div>
-    <div class="nav-tab" onclick="switchTab('tabUsers')">User Management</div>
-    <div class="nav-tab" onclick="switchTab('tabDatabases')">Databases &amp; Orgs</div>
-    <div class="nav-tab" onclick="switchTab('tabContributions')">Global Contributions</div>
-    <div class="nav-tab" onclick="switchTab('tabFederated')">Federated Runs</div>
-    <div class="nav-tab" onclick="switchTab('tabAudit')">Audit Logs (Triggers)</div>
+    <div class="nav-tab active" data-roles="ADMIN" onclick="switchTab('tabOverview', this)">Overview &amp; Metrics</div>
+    <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabViews', this)">Database Views (PostgreSQL)</div>
+    <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabUsers', this)">User Management</div>
+    <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabDatabases', this)">Databases &amp; Orgs</div>
+    <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabContributions', this)">Global Contributions</div>
+    <div class="nav-tab" data-roles="ADMIN,RESEARCHER" onclick="switchTab('tabFederated', this)">Federated Runs</div>
+    <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabAudit', this)">Audit Logs (Triggers)</div>
   </div>
 
+  <div id="dashboardNotice" class="alert error" style="display:none; margin-bottom:14px;"></div>
+
   <!-- TAB 1: OVERVIEW -->
-  <section id="tabOverview">
+  <section id="tabOverview" data-roles="ADMIN">
     <div class="section-title">PostgreSQL Database System Aggregates</div>
     <div class="cards-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:20px;">
       <div class="card metric-card">
@@ -141,7 +143,7 @@
   </section>
 
   <!-- TAB 2: POSTGRESQL VIEWS -->
-  <section id="tabViews" style="display:none;">
+  <section id="tabViews" data-roles="ADMIN" style="display:none;">
     <div class="section-title">Database View: v_organization_contribution_summary</div>
     <div class="search-filter-bar">
       <input type="text" id="viewSearch" placeholder="Search organization view…" oninput="loadViews(0)" style="padding:6px 12px; border:1px solid var(--border-strong); border-radius:4px; font-size:12px;" />
@@ -176,7 +178,7 @@
   </section>
 
   <!-- TAB 3: USER MANAGEMENT -->
-  <section id="tabUsers" style="display:none;">
+  <section id="tabUsers" data-roles="ADMIN" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <div class="section-title" style="margin-bottom:0;">User Management (CRUD)</div>
       <button class="btn-primary" onclick="openCreateUserModal()">+ Create User</button>
@@ -221,7 +223,7 @@
   </section>
 
   <!-- TAB 4: DATABASES -->
-  <section id="tabDatabases" style="display:none;">
+  <section id="tabDatabases" data-roles="ADMIN" style="display:none;">
     <div class="section-title">Registered Federated Databases (CRUD)</div>
     <div class="search-filter-bar">
       <input type="text" id="dbSearch" placeholder="Search database identifier or org…" oninput="loadDatabases(0)" style="padding:6px 12px; border:1px solid var(--border-strong); border-radius:4px; font-size:12px;" />
@@ -259,7 +261,7 @@
   </section>
 
   <!-- TAB 5: GLOBAL CONTRIBUTIONS -->
-  <section id="tabContributions" style="display:none;">
+  <section id="tabContributions" data-roles="ADMIN" style="display:none;">
     <div class="section-title">All Submitted Differential Privacy Contributions</div>
     <div class="search-filter-bar">
       <input type="text" id="globalContribSearch" placeholder="Search contributions by org or database…" oninput="loadGlobalContributions(0)" style="padding:6px 12px; border:1px solid var(--border-strong); border-radius:4px; font-size:12px;" />
@@ -294,8 +296,20 @@
   </section>
 
   <!-- TAB 6: FEDERATED RUNS -->
-  <section id="tabFederated" style="display:none;">
+  <section id="tabFederated" data-roles="ADMIN,RESEARCHER" style="display:none;">
     <div class="section-title">Historical Federated Computation Runs</div>
+    <div class="card" style="margin-bottom:16px;">
+      <form id="federatedRunForm" onsubmit="startFederatedRun(event)" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+        <div class="field-group">
+          <label for="runMetric">Supported aggregate</label>
+          <select id="runMetric">
+            <option value="overall">Overall protected mean</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="startRunButton" type="submit">Start Federated Run</button>
+        <span id="federatedRunMessage" role="status" aria-live="polite"></span>
+      </form>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -324,7 +338,7 @@
   </section>
 
   <!-- TAB 7: AUDIT LOGS -->
-  <section id="tabAudit" style="display:none;">
+  <section id="tabAudit" data-roles="ADMIN" style="display:none;">
     <div class="section-title">Security &amp; Automated Trigger Audit Log</div>
     <div class="search-filter-bar">
       <input type="text" id="auditSearch" placeholder="Search by email or details…" oninput="loadAuditLogs(0)" style="padding:6px 12px; border:1px solid var(--border-strong); border-radius:4px; font-size:12px;" />
@@ -335,6 +349,10 @@
         <option value="LOGIN_SUCCESS">LOGIN_SUCCESS</option>
         <option value="SYSTEM_BOOTSTRAP">SYSTEM_BOOTSTRAP</option>
       </select>
+      <label for="auditStartDate">From</label>
+      <input type="date" id="auditStartDate" onchange="loadAuditLogs(0)" />
+      <label for="auditEndDate">To</label>
+      <input type="date" id="auditEndDate" onchange="loadAuditLogs(0)" />
     </div>
     <div class="table-wrap">
       <table>
@@ -399,21 +417,53 @@
 <script src="js/org-portal.js"></script>
 <script>
   const adminSession = OrgAuth.getSession();
-  if (!adminSession || !adminSession.token || adminSession.role !== 'ADMIN') {
+  if (!adminSession || !adminSession.token) {
+    window.location.href = 'org-login.html';
+  } else if (adminSession.role === 'DATA_OWNER') {
+    window.location.href = 'org-dashboard.html';
+  } else if (!['ADMIN', 'RESEARCHER'].includes(adminSession.role)) {
     window.location.href = 'org-login.html';
   } else {
     document.getElementById('adminName').textContent = adminSession.fullName || adminSession.email;
+    document.querySelector('.brand-title').textContent =
+      adminSession.role === 'ADMIN' ? 'Admin Console' : 'Federated Analytics';
+    document.querySelector('.brand-sub').textContent =
+      adminSession.role === 'ADMIN' ? 'Federated Network Management • VIT Database Systems' : 'Researcher Analytics';
+    document.querySelector('.role-tag').textContent = adminSession.role;
+    document.querySelectorAll('[data-roles]').forEach(element => {
+      const roles = element.dataset.roles.split(',');
+      if (!roles.includes(adminSession.role)) element.style.display = 'none';
+    });
+    if (adminSession.role === 'RESEARCHER') {
+      document.getElementById('tabFederated').style.display = 'block';
+      document.querySelector('.nav-tab[data-roles="ADMIN,RESEARCHER"]').classList.add('active');
+    }
   }
 
   function adminLogout() {
     OrgAuth.logout();
   }
 
-  function switchTab(tabId) {
+  function setDashboardNotice(message, isError = true) {
+    const el = document.getElementById('dashboardNotice');
+    if (!el) return;
+    el.textContent = message || '';
+    el.style.display = message ? 'block' : 'none';
+    el.classList.toggle('error', isError);
+    el.classList.toggle('success', !isError);
+  }
+
+  function switchTab(tabId, tabElement) {
+    const section = document.getElementById(tabId);
+    if (!section || !section.dataset.roles.split(',').includes(adminSession.role)) {
+      setDashboardNotice('Access denied. This section is not available to your role.');
+      return;
+    }
+    setDashboardNotice('');
     document.querySelectorAll('main > section').forEach(sec => sec.style.display = 'none');
     document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
-    document.getElementById(tabId).style.display = 'block';
-    event.currentTarget.classList.add('active');
+    section.style.display = 'block';
+    if (tabElement) tabElement.classList.add('active');
 
     if (tabId === 'tabOverview') loadOverview();
     if (tabId === 'tabViews') loadViews(0);
@@ -428,9 +478,15 @@
     options.headers = options.headers || {};
     options.headers['Authorization'] = `Bearer ${adminSession.token}`;
     const res = await fetch(url, options);
-    if (res.status === 401 || res.status === 403) {
-      OrgAuth.logout();
-      throw new Error('Session unauthorized');
+    if (res.status === 401) {
+      OrgAuth.clearSession();
+      window.location.href = 'org-login.html?reason=session-expired';
+      throw new Error('Your session has expired. Please log in again.');
+    }
+    if (res.status === 403) {
+      const message = 'Access denied. You do not have permission for this action.';
+      setDashboardNotice(message, true);
+      throw new Error(message);
     }
     return res;
   }
@@ -459,14 +515,32 @@
 
   async function triggerCentralFederatedRun() {
     const msg = document.getElementById('runResultMsg');
-    msg.textContent = 'Executing federated computation…';
+    await createFederatedRun('overall', msg);
+  }
+
+  async function startFederatedRun(event) {
+    event.preventDefault();
+    const button = document.getElementById('startRunButton');
+    button.disabled = true;
     try {
-      const res = await authFetch('/api/analytics/results/runs?metric=overall', { method: 'POST' });
+      await createFederatedRun(document.getElementById('runMetric').value, document.getElementById('federatedRunMessage'));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function createFederatedRun(metric, messageElement) {
+    messageElement.textContent = 'Executing federated computation…';
+    try {
+      const res = await authFetch(`/api/analytics/results/runs?metric=${encodeURIComponent(metric)}`, { method: 'POST' });
       const data = await res.json();
-      msg.textContent = `Completed run ${data.runIdentifier}: Mean = ${Number(data.globalProtectedMean).toFixed(4)} over ${data.participatingOrgCount} orgs.`;
-      loadOverview();
+      messageElement.textContent =
+        `Completed run ${data.runIdentifier}: Mean = ${Number(data.globalProtectedMean).toFixed(4)} over ${data.participatingOrgCount} organizations.`;
+      OrgAuth.notifyPublicDashboardUpdated();
+      await loadFederatedRuns(runsPage);
+      if (adminSession.role === 'ADMIN') await loadOverview();
     } catch (e) {
-      msg.textContent = 'Run failed: ' + e.message;
+      messageElement.textContent = `Run failed: ${e.message}`;
     }
   }
 
@@ -679,7 +753,7 @@
           <td>${Number(r.protectedTotalRecords).toLocaleString()}</td>
           <td>${Number(r.protectedAggregateSum).toFixed(2)}</td>
           <td>${Number(r.globalProtectedMean).toFixed(4)}</td>
-          <td>${escapeHtml(r.executedBy?.email || 'SYSTEM')}</td>
+          <td>${escapeHtml(r.executedByEmail || 'SYSTEM')}</td>
           <td>${new Date(r.executedAt).toLocaleString()}</td>
         </tr>
       `).join('');
@@ -700,6 +774,10 @@
       let url = `/api/admin/audit-logs?page=${page}&size=15`;
       if (q) url += `&query=${encodeURIComponent(q)}`;
       if (act) url += `&action=${encodeURIComponent(act)}`;
+      const start = document.getElementById('auditStartDate').value;
+      const end = document.getElementById('auditEndDate').value;
+      if (start) url += `&startDate=${encodeURIComponent(`${start}T00:00:00`)}`;
+      if (end) url += `&endDate=${encodeURIComponent(`${end}T23:59:59`)}`;
       const res = await authFetch(url);
       const data = await res.json();
       const items = data.content || [];
@@ -722,8 +800,11 @@
   }
   function changeAuditPage(d) { loadAuditLogs(auditPage + d); }
 
-  // Initial load
-  loadOverview();
+  if (adminSession && adminSession.role === 'ADMIN') {
+    loadOverview();
+  } else if (adminSession && adminSession.role === 'RESEARCHER') {
+    loadFederatedRuns();
+  }
 </script>
 
 </body>

@@ -61,7 +61,10 @@ public class FederatedDatabaseService {
 
     @Transactional(readOnly = true)
     public Page<DatabaseResponse> searchAndFilter(String query, Boolean active, Pageable pageable) {
-        return federatedDatabaseRepository.searchAndFilter(query, active, pageable).map(this::toResponse);
+        String normalizedQuery = query == null || query.isBlank() ? "" : query.trim();
+        return federatedDatabaseRepository.searchAndFilter(
+            normalizedQuery, active != null, active != null && active, pageable
+        ).map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
@@ -80,6 +83,15 @@ public class FederatedDatabaseService {
     @Transactional(readOnly = true)
     public Page<DatabaseResponse> getDatabasesOwnedByPaginated(User owner, Pageable pageable) {
         return federatedDatabaseRepository.findByOwnerId(owner.getId(), pageable).map(this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<DatabaseResponse> searchOwned(User owner, String query, Boolean active, Pageable pageable) {
+        String normalizedQuery = query == null || query.isBlank() ? "" : query.trim();
+        return federatedDatabaseRepository.searchOwned(
+            owner.getId(), normalizedQuery, active != null, active != null && active, pageable
+        )
+            .map(this::toResponse);
     }
 
     @Transactional
