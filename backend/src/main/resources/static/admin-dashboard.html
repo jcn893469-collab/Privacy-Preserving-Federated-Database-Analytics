@@ -8,7 +8,7 @@
 <style>
   .nav-tabs {
     display: flex; gap: 8px; border-bottom: 1px solid var(--border);
-    margin-bottom: 20px;
+    margin-bottom: 20px; flex-wrap: wrap;
   }
   .nav-tab {
     padding: 10px 16px; font-weight: 600; font-size: 13px;
@@ -75,7 +75,7 @@
     <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabUsers', this)">User Management</div>
     <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabDatabases', this)">Databases &amp; Orgs</div>
     <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabContributions', this)">Global Contributions</div>
-    <div class="nav-tab" data-roles="ADMIN,RESEARCHER" onclick="switchTab('tabFederated', this)">Federated Runs</div>
+    <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabFederated', this)">Federated Runs</div>
     <div class="nav-tab" data-roles="ADMIN" onclick="switchTab('tabAudit', this)">Audit Logs (Triggers)</div>
   </div>
 
@@ -421,23 +421,20 @@
     window.location.href = 'org-login.html';
   } else if (adminSession.role === 'DATA_OWNER') {
     window.location.href = 'org-dashboard.html';
-  } else if (!['ADMIN', 'RESEARCHER'].includes(adminSession.role)) {
+  } else if (adminSession.role === 'RESEARCHER') {
+    window.location.href = 'researcher-dashboard.html';
+  } else if (adminSession.role !== 'ADMIN') {
     window.location.href = 'org-login.html';
   } else {
     document.getElementById('adminName').textContent = adminSession.fullName || adminSession.email;
     document.querySelector('.brand-title').textContent =
-      adminSession.role === 'ADMIN' ? 'Admin Console' : 'Federated Analytics';
-    document.querySelector('.brand-sub').textContent =
-      adminSession.role === 'ADMIN' ? 'Federated Network Management • VIT Database Systems' : 'Researcher Analytics';
+      'Admin Console';
+    document.querySelector('.brand-sub').textContent = 'Federated Network Management • VIT Database Systems';
     document.querySelector('.role-tag').textContent = adminSession.role;
     document.querySelectorAll('[data-roles]').forEach(element => {
       const roles = element.dataset.roles.split(',');
       if (!roles.includes(adminSession.role)) element.style.display = 'none';
     });
-    if (adminSession.role === 'RESEARCHER') {
-      document.getElementById('tabFederated').style.display = 'block';
-      document.querySelector('.nav-tab[data-roles="ADMIN,RESEARCHER"]').classList.add('active');
-    }
   }
 
   function adminLogout() {
@@ -802,8 +799,6 @@
 
   if (adminSession && adminSession.role === 'ADMIN') {
     loadOverview();
-  } else if (adminSession && adminSession.role === 'RESEARCHER') {
-    loadFederatedRuns();
   }
 </script>
 

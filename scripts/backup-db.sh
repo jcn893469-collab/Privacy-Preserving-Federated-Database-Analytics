@@ -1,28 +1,31 @@
 #!/usr/bin/env bash
-# backup-db.sh
-# Backup PostgreSQL Database using pg_dump
-
-set -e
+set -euo pipefail
 
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-fpa_db}"
-DB_USERNAME="${DB_USERNAME:-postgres}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 
+if [[ -z "${DB_USERNAME:-}" || -z "${DB_PASSWORD:-}" ]]; then
+  echo "Set DB_USERNAME and DB_PASSWORD before creating a backup." >&2
+  exit 1
+fi
+if ! command -v pg_dump >/dev/null 2>&1; then
+  echo "pg_dump was not found; install PostgreSQL client tools." >&2
+  exit 1
+fi
+
 mkdir -p "$BACKUP_DIR"
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_backup_${TIMESTAMP}.sql"
+timestamp="$(date +"%Y%m%d_%H%M%S")"
+backup_file="${BACKUP_DIR}/${DB_NAME}_backup_${timestamp}.dump"
+export PGPASSWORD="$DB_PASSWORD"
 
-echo "=========================================="
-echo "Starting PostgreSQL Database Backup..."
-echo "Database: ${DB_NAME} on ${DB_HOST}:${DB_PORT}"
-echo "Target:   ${BACKUP_FILE}"
-echo "=========================================="
+if ! pg_dump --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USERNAME" \
+  --dbname="$DB_NAME" --format=custom --blobs --verbose --file="$backup_file"; then
+  rm -f -- "$backup_file"
+  echo "pg_dump failed; partial backup removed." >&2
+  exit 1
+fi
 
-export PGPASSWORD="${DB_PASSWORD}"
-pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USERNAME" -d "$DB_NAME" -F p -b -v -f "$BACKUP_FILE"
 unset PGPASSWORD
-
-echo "Backup completed successfully!"
-echo "Backup saved to: ${BACKUP_FILE}"
+echo "Backup completed: $backup_file"

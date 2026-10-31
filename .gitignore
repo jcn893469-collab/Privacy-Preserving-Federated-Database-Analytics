@@ -35,6 +35,7 @@ Thumbs.db
 logs/
 *.dump
 backups/*.dump
+backups/
 restore_*.log
 startup-error.txt
 

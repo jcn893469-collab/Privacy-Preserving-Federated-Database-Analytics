@@ -57,10 +57,34 @@ const OrgAuth = {
       window.location.href = 'org-login.html';
       return null;
     }
+    if (s.role !== 'DATA_OWNER') {
+      const dashboard = s.role === 'ADMIN'
+        ? 'admin-dashboard.html'
+        : s.role === 'RESEARCHER'
+          ? 'researcher-dashboard.html'
+          : 'org-login.html';
+      window.location.replace(dashboard);
+      return null;
+    }
     return s;
   },
 
-  logout() {
+  async logout() {
+    const session = this.getSession();
+    if (session && session.token) {
+      try {
+        const response = await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.token}` }
+        });
+        if (!response.ok) {
+          throw new Error(`Server logout failed (${response.status})`);
+        }
+      } catch (error) {
+        console.error('Could not confirm server-side logout:', error);
+        window.alert('The server could not confirm logout. Your local session will be cleared, but this token may remain valid until it expires.');
+      }
+    }
     this.clearSession();
     window.location.href = 'org-login.html';
   },

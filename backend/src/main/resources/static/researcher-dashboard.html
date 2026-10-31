@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Researcher Dashboard — Privacy-Preserving Federated Analytics</title>
+  <link rel="stylesheet" href="css/org-portal.css" />
+  <style>
+    .researcher-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .researcher-search { max-width: 360px; }
+    .status-message { min-height: 22px; margin-top: 10px; color: var(--text-1); }
+    @media (max-width: 600px) {
+      .researcher-search { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-icon" style="background:#0891b2;" aria-hidden="true">R</div>
+      <div>
+        <div class="brand-title">Researcher Analytics</div>
+        <div class="brand-sub">Federated results only — no organization or user administration</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <a href="index.html">Public Portal</a>
+      <div class="user-pill">
+        <span class="user-avatar" id="researcherAvatar" style="background:#0891b2;">R</span>
+        <span id="researcherName">Researcher</span>
+        <span class="role-tag">RESEARCHER</span>
+      </div>
+      <button class="btn-logout" type="button" onclick="OrgAuth.logout()">Log out</button>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="section-title">Federated network summary</div>
+      <div class="cards-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+        <div class="card metric-card"><div class="label">Participating organizations</div><div class="value" id="organizationCount">—</div></div>
+        <div class="card metric-card"><div class="label">Contributions</div><div class="value" id="contributionCount">—</div></div>
+        <div class="card metric-card"><div class="label">Protected records</div><div class="value" id="protectedCount">—</div></div>
+        <div class="card metric-card"><div class="label">Protected global mean</div><div class="value" id="protectedMean">—</div></div>
+      </div>
+      <div id="researcherNotice" class="status-message" role="status" aria-live="polite"></div>
+    </section>
+
+    <section>
+      <div class="section-title">Federated computation</div>
+      <div class="card">
+        <p>Run a federated aggregation over submitted privacy-protected contributions. This view does not expose source records, owner accounts, or administrative controls.</p>
+        <div class="researcher-actions">
+          <button class="btn-primary" id="runButton" type="button" onclick="startResearchRun()">Run global aggregation</button>
+          <span id="runSummary"></span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Historical runs</div>
+      <div class="search-filter-bar">
+        <input class="researcher-search" id="runSearch" type="search" placeholder="Search run identifier or metric…" oninput="loadRuns(0)" />
+        <button class="btn-secondary" type="button" onclick="loadRuns(0)">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Run</th><th>Metric</th><th>Organizations</th><th>Contributions</th><th>Protected records</th><th>Protected mean</th><th>Executed</th></tr>
+          </thead>
+          <tbody id="runsBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination-bar">
+        <span id="runsPageInfo">Page 1 of 1</span>
+        <div class="pagination-btns">
+          <button id="runsPrevious" type="button" onclick="changeRunsPage(-1)">Previous</button>
+          <button id="runsNext" type="button" onclick="changeRunsPage(1)">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/org-portal.js"></script>
+  <script>
+    const researcherSession = OrgAuth.getSession();
+    let runsPage = 0;
+    let runsTotalPages = 1;
+    let runSearchTimer;
+
+    if (!researcherSession || !researcherSession.token || researcherSession.role !== 'RESEARCHER') {
+      window.location.replace('org-login.html');
+    } else {
+      document.getElementById('researcherName').textContent =
+        researcherSession.fullName || researcherSession.email;
+      document.getElementById('researcherAvatar').textContent =
+        (researcherSession.fullName || researcherSession.email || 'R').trim().charAt(0).toUpperCase();
+      refreshResearchSummary();
+      loadRuns(0);
+    }
+
+    async function researcherFetch(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          Authorization: 'Bearer ' + researcherSession.token,
+          ...(options.body ? { 'Content-Type': 'application/json' } : {})
+        }
+      });
+      if (response.status === 401) {
+        OrgAuth.clearSession();
+        window.location.replace('org-login.html?reason=session-expired');
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+      return payload;
+    }
+
+    async function refreshResearchSummary() {
+      try {
+        const summary = await researcherFetch('/api/analytics/results/global');
+        document.getElementById('organizationCount').textContent = summary.participatingOrganizations;
+        document.getElementById('contributionCount').textContent = summary.contributionCount;
+        document.getElementById('protectedCount').textContent =
+          Number(summary.protectedTotalCount || 0).toLocaleString();
+        document.getElementById('protectedMean').textContent =
+          Number(summary.globalProtectedMean || 0).toFixed(4);
+      } catch (error) {
+        setResearcherNotice(error.message);
+      }
+    }
+
+    async function startResearchRun() {
+      const button = document.getElementById('runButton');
+      const summary = document.getElementById('runSummary');
+      button.disabled = true;
+      summary.textContent = 'Running aggregation…';
+      try {
+        const run = await researcherFetch('/api/analytics/results/runs?metric=overall', { method: 'POST' });
+        summary.textContent =
+          `Completed ${run.runIdentifier}; protected mean ${Number(run.globalProtectedMean).toFixed(4)}.`;
+        OrgAuth.notifyPublicDashboardUpdated();
+        await Promise.all([refreshResearchSummary(), loadRuns(0)]);
+      } catch (error) {
+        summary.textContent = `Aggregation failed: ${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function loadRuns(page = 0) {
+      runsPage = Math.max(0, page);
+      const query = document.getElementById('runSearch').value.trim();
+      const params = new URLSearchParams({ page: runsPage, size: 10 });
+      if (query) params.set('query', query);
+      try {
+        const result = await researcherFetch(`/api/analytics/results/runs?${params}`);
+        const entries = result.content || [];
+        runsTotalPages = Math.max(1, result.totalPages || 1);
+        document.getElementById('runsBody').innerHTML = entries.map(run => `
+          <tr>
+            <td>${escapeHtml(run.runIdentifier)}</td>
+            <td>${escapeHtml(run.targetMetric)}</td>
+            <td>${run.participatingOrgCount}</td>
+            <td>${run.totalContributionCount}</td>
+            <td>${Number(run.protectedTotalRecords || 0).toLocaleString()}</td>
+            <td>${Number(run.globalProtectedMean || 0).toFixed(4)}</td>
+            <td>${new Date(run.executedAt).toLocaleString()}</td>
+          </tr>`).join('');
+        document.getElementById('runsPageInfo').textContent =
+          `Page ${runsPage + 1} of ${runsTotalPages}`;
+        document.getElementById('runsPrevious').disabled = runsPage <= 0;
+        document.getElementById('runsNext').disabled = runsPage >= runsTotalPages - 1;
+      } catch (error) {
+        setResearcherNotice(error.message);
+      }
+    }
+
+    function changeRunsPage(delta) {
+      loadRuns(runsPage + delta);
+    }
+
+    function setResearcherNotice(message) {
+      document.getElementById('researcherNotice').textContent = message || '';
+    }
+  </script>
+</body>
+</html>

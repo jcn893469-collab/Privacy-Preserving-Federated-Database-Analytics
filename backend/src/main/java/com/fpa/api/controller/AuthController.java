@@ -49,4 +49,11 @@ public class AuthController {
         UserResponse response = userService.toResponse(user);
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout() {
+        User user = currentUserService.requireUser();
+        userService.logout(user.getId());
+        return ResponseEntity.ok(Map.of("message", "All active tokens for this account have been invalidated"));
+    }
 }

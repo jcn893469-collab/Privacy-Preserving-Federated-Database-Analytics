@@ -138,8 +138,10 @@
         role: data.role
       });
 
-      if (data.role === 'ADMIN' || data.role === 'RESEARCHER') {
+      if (data.role === 'ADMIN') {
         window.location.href = 'admin-dashboard.html';
+      } else if (data.role === 'RESEARCHER') {
+        window.location.href = 'researcher-dashboard.html';
       } else if (data.role === 'DATA_OWNER') {
         window.location.href = 'org-dashboard.html';
       } else {

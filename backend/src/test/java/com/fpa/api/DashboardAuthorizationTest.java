@@ -2,6 +2,7 @@ package com.fpa.api;
 
 import com.fpa.api.controller.AdminController;
 import com.fpa.api.controller.AnalyticsController;
+import com.fpa.api.controller.DatasetController;
 import com.fpa.api.controller.FederatedDatabaseController;
 import com.fpa.api.controller.PublicDashboardController;
 import com.fpa.api.controller.UserController;
@@ -19,6 +20,7 @@ import com.fpa.service.AnalyticsContributionService;
 import com.fpa.service.AuditLogService;
 import com.fpa.service.FederatedAggregationService;
 import com.fpa.service.FederatedDatabaseService;
+import com.fpa.service.DatasetService;
 import com.fpa.service.PublicDashboardService;
 import com.fpa.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +33,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.IOException;
@@ -39,9 +42,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -49,6 +55,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(controllers = {
     AdminController.class,
     AnalyticsController.class,
+    DatasetController.class,
     FederatedDatabaseController.class,
     UserController.class,
     PublicDashboardController.class
@@ -91,6 +98,9 @@ class DashboardAuthorizationTest {
     private FederatedDatabaseService federatedDatabaseService;
 
     @MockBean
+    private DatasetService datasetService;
+
+    @MockBean
     private UserService userService;
 
     @MockBean
@@ -120,6 +130,53 @@ class DashboardAuthorizationTest {
             user.setId(1L);
             return user;
         });
+    }
+
+    @Test
+    void datasetAndColumnEndpointsAreLimitedToAdminsAndDataOwners() throws Exception {
+        for (String endpoint : List.of(
+                "/api/datasets/database/1",
+                "/api/datasets/1/columns")) {
+            mockMvc.perform(get(endpoint).with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")))
+                .andExpect(status().isOk());
+            mockMvc.perform(get(endpoint).with(SecurityMockMvcRequestPostProcessors.user("owner").roles("DATA_OWNER")))
+                .andExpect(status().isOk());
+            mockMvc.perform(get(endpoint).with(SecurityMockMvcRequestPostProcessors.user("researcher").roles("RESEARCHER")))
+                .andExpect(status().isForbidden());
+        }
+
+        for (var request : List.of(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/datasets"),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/datasets/1"),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/datasets/1"),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/datasets/1/columns"),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/datasets/1/columns/1"),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/datasets/1/columns/1"))) {
+            mockMvc.perform(request.with(SecurityMockMvcRequestPostProcessors.user("researcher").roles("RESEARCHER")))
+                .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void datasetSearchUsesRequestedPageAndRejectsOutOfRangePagination() throws Exception {
+        when(datasetService.searchDatasets(eq(1L), eq("vitals"), any())).thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/datasets/database/1?query=vitals&page=1&size=20")
+                .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content").isArray());
+
+        var pageable = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(datasetService).searchDatasets(eq(1L), eq("vitals"), pageable.capture());
+        assertEquals(1, pageable.getValue().getPageNumber());
+        assertEquals(20, pageable.getValue().getPageSize());
+
+        mockMvc.perform(get("/api/datasets/database/1?page=-1")
+                .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/datasets/database/1?size=101")
+                .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -238,6 +295,23 @@ class DashboardAuthorizationTest {
         assertTrue(html.contains("if (res.status === 403)"));
         assertTrue(html.contains("setDashboardNotice(message, true)"));
         assertFalse(html.contains("if (res.status === 403) { OrgAuth.clearSession();"));
+    }
+
+    @Test
+    void researcherHasSeparateDashboardAndResponsiveLayoutsAreDefined() throws IOException {
+        String researcherDashboard = readStaticResource("/static/researcher-dashboard.html");
+        String adminDashboard = readStaticResource("/static/admin-dashboard.html");
+        String loginPage = readStaticResource("/static/org-login.html");
+        String portalScript = readStaticResource("/static/js/org-portal.js");
+        String portalStyles = readStaticResource("/static/css/org-portal.css");
+
+        assertTrue(researcherDashboard.contains("Federated computation"));
+        assertFalse(researcherDashboard.contains("User Management"));
+        assertTrue(adminDashboard.contains("researcher-dashboard.html"));
+        assertTrue(loginPage.contains("researcher-dashboard.html"));
+        assertTrue(portalScript.contains("s.role !== 'DATA_OWNER'"));
+        assertTrue(portalStyles.contains("@media (max-width: 760px)"));
+        assertTrue(portalStyles.contains("@media (max-width: 460px)"));
     }
 
     private String readStaticResource(String path) throws IOException {

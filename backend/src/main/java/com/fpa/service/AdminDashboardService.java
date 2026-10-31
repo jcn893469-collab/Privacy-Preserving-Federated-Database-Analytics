@@ -8,6 +8,8 @@ import com.fpa.domain.repository.DatasetMetadataRepository;
 import com.fpa.domain.repository.FederatedDatabaseRepository;
 import com.fpa.domain.repository.OrganizationContributionSummaryRepository;
 import com.fpa.domain.repository.UserRepository;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.List;
 
 @Service
@@ -25,17 +29,20 @@ public class AdminDashboardService {
     private final AnalyticsContributionRepository analyticsContributionRepository;
     private final DatasetMetadataRepository datasetMetadataRepository;
     private final OrganizationContributionSummaryRepository organizationSummaryRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     public AdminDashboardService(FederatedDatabaseRepository federatedDatabaseRepository,
                                   UserRepository userRepository,
                                   AnalyticsContributionRepository analyticsContributionRepository,
                                   DatasetMetadataRepository datasetMetadataRepository,
-                                  OrganizationContributionSummaryRepository organizationSummaryRepository) {
+                                  OrganizationContributionSummaryRepository organizationSummaryRepository,
+                                  JdbcTemplate jdbcTemplate) {
         this.federatedDatabaseRepository = federatedDatabaseRepository;
         this.userRepository = userRepository;
         this.analyticsContributionRepository = analyticsContributionRepository;
         this.datasetMetadataRepository = datasetMetadataRepository;
         this.organizationSummaryRepository = organizationSummaryRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -85,5 +92,25 @@ public class AdminDashboardService {
     @Transactional(readOnly = true)
     public Page<OrganizationContributionSummaryView> searchOrganizationSummaries(String query, Pageable pageable) {
         return organizationSummaryRepository.searchView(query, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public String generateOrganizationSummary(Long databaseId) {
+        String summary = jdbcTemplate.execute((ConnectionCallback<String>) connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "CALL sp_generate_organization_analytics_summary(?, NULL)")) {
+                statement.setLong(1, databaseId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return null;
+                    }
+                    return resultSet.getString(1);
+                }
+            }
+        });
+        if (summary == null) {
+            throw new IllegalArgumentException("Federated database not found with id: " + databaseId);
+        }
+        return summary;
     }
 }

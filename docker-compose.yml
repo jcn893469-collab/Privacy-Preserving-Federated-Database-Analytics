@@ -20,15 +20,15 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-fpa_db}
-      POSTGRES_USER: ${POSTGRES_USER:-fpa_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fpa_secret}
+      POSTGRES_USER: ${DB_USERNAME:?Set DB_USERNAME in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fpa_user} -d ${POSTGRES_DB:-fpa_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:?Set DB_USERNAME in .env} -d ${POSTGRES_DB:-fpa_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,16 +50,16 @@ services:
         condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-fpa_db}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fpa_user}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fpa_secret}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?Set DB_USERNAME in .env}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-very-long-random-base64-string-for-production}
-      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-28800000}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-prod}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

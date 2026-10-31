@@ -34,6 +34,7 @@ public class SecurityConfig {
                     "/org-login.html",
                     "/org-dashboard.html",
                     "/admin-dashboard.html",
+                    "/researcher-dashboard.html",
                     "/css/**",
                     "/js/**",
                     "/images/**",

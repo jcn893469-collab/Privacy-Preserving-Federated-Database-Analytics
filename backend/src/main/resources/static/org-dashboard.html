@@ -40,6 +40,14 @@
     background: #fff; border-radius: 4px; cursor: pointer;
   }
   .pagination-btns button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .dataset-actions { display: flex; gap: 6px; }
+  .dataset-editor { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: end; }
+  @media (max-width: 760px) {
+    .dataset-editor { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 460px) {
+    .dataset-editor { grid-template-columns: minmax(0, 1fr); }
+  }
 </style>
 </head>
 <body>
@@ -122,6 +130,92 @@
       </div>
     </div>
     <div class="alert error" id="orgInfoError" style="display:none; margin-top:12px;"></div>
+  </section>
+
+  <section>
+    <div class="section-title">Dataset &amp; Column Schema Management</div>
+    <div class="card">
+      <h2 class="management-heading">Dataset metadata</h2>
+      <form id="datasetForm" onsubmit="saveDataset(event)">
+        <input type="hidden" id="datasetEditId" />
+        <div class="dataset-editor">
+          <div class="field-group">
+            <label for="datasetNameInput">Dataset name</label>
+            <input id="datasetNameInput" type="text" maxlength="150" required />
+          </div>
+          <div class="field-group">
+            <label for="datasetDescriptionInput">Description</label>
+            <input id="datasetDescriptionInput" type="text" />
+          </div>
+          <div class="field-group">
+            <label for="datasetRecordsInput">Record count</label>
+            <input id="datasetRecordsInput" type="number" min="0" value="0" required />
+          </div>
+          <div class="field-group" id="datasetVersionGroup" style="display:none;">
+            <label for="datasetVersionInput">Schema version</label>
+            <input id="datasetVersionInput" type="text" maxlength="30" value="1.0" />
+          </div>
+          <div class="dataset-actions">
+            <button class="btn-primary" id="datasetSaveButton" type="submit">Create dataset</button>
+            <button class="btn-secondary" id="datasetCancelButton" type="button" onclick="resetDatasetForm()" style="display:none;">Cancel</button>
+          </div>
+        </div>
+      </form>
+      <div class="search-filter-bar" style="margin-top:16px;">
+        <input id="datasetSearch" type="text" placeholder="Search datasets…" oninput="loadDatasetPage(0)" />
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Dataset</th><th>Records</th><th>Schema version</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody id="datasetsBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination-bar">
+        <span id="datasetPageInfo">Page 1 of 1</span>
+        <div class="pagination-btns">
+          <button id="datasetPrev" type="button" onclick="changeDatasetPage(-1)">Previous</button>
+          <button id="datasetNext" type="button" onclick="changeDatasetPage(1)">Next</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="columnManager" style="margin-top:14px; display:none;">
+      <h2 class="management-heading">Column schema: <span id="selectedDatasetName"></span></h2>
+      <form id="columnForm" onsubmit="saveColumn(event)">
+        <input type="hidden" id="columnEditId" />
+        <div class="dataset-editor">
+          <div class="field-group">
+            <label for="columnNameInput">Column name</label>
+            <input id="columnNameInput" type="text" maxlength="100" required />
+          </div>
+          <div class="field-group">
+            <label for="columnTypeInput">Data type</label>
+            <input id="columnTypeInput" type="text" maxlength="50" value="NUMERIC" required />
+          </div>
+          <div class="field-group">
+            <label for="columnLowerInput">Clipping lower</label>
+            <input id="columnLowerInput" type="number" step="any" required />
+          </div>
+          <div class="field-group">
+            <label for="columnUpperInput">Clipping upper</label>
+            <input id="columnUpperInput" type="number" step="any" required />
+          </div>
+          <div class="field-group">
+            <label><input id="columnTargetInput" type="checkbox" checked /> Target metric</label>
+          </div>
+          <div class="dataset-actions">
+            <button class="btn-primary" id="columnSaveButton" type="submit">Add column</button>
+            <button class="btn-secondary" id="columnCancelButton" type="button" onclick="resetColumnForm()" style="display:none;">Cancel</button>
+          </div>
+        </div>
+      </form>
+      <div class="table-wrap" style="margin-top:16px;">
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Clip bounds</th><th>Sensitivity</th><th>Target</th><th>Actions</th></tr></thead>
+          <tbody id="columnsBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="alert error" id="datasetManagerError" style="display:none; margin-top:12px;"></div>
   </section>
 
   <!-- CSV UPLOAD -->
@@ -430,6 +524,10 @@
   let currentPipelineResult = null;
   let contribCurrentPage = 0;
   let contribTotalPages = 1;
+  let datasetCurrentPage = 0;
+  let datasetTotalPages = 1;
+  let selectedDatasetId = null;
+  let selectedDatasetColumns = [];
 
   if (session) {
     document.getElementById('userAvatar').textContent = initialsFor(session.fullName);
@@ -456,9 +554,213 @@
       await refreshPrivacyStatus();
       await loadContributions(0);
       await loadFederatedAnalytics();
+      await loadDatasetPage(0);
     } catch (err) {
       document.getElementById('orgInfoError').textContent = err.message || 'Error loading organization.';
       document.getElementById('orgInfoError').style.display = 'block';
+    }
+  }
+
+  async function datasetRequest(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + session.token,
+        ...(options.headers || {})
+      }
+    });
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      OrgAuth.clearSession();
+      window.location.href = 'org-login.html?reason=session-expired';
+      throw new Error('Your session has expired. Please log in again.');
+    }
+    if (!response.ok) throw new Error(body.error || `Dataset request failed (${response.status})`);
+    return body;
+  }
+
+  function showDatasetError(message = '') {
+    const element = document.getElementById('datasetManagerError');
+    element.textContent = message;
+    element.style.display = message ? 'block' : 'none';
+  }
+
+  async function loadDatasetPage(page = 0) {
+    if (!currentDbId) return;
+    datasetCurrentPage = page;
+    showDatasetError();
+    try {
+      const query = document.getElementById('datasetSearch').value.trim();
+      const params = new URLSearchParams({ page, size: 10 });
+      if (query) params.set('query', query);
+      const data = await datasetRequest(`/api/datasets/database/${currentDbId}?${params}`);
+      const items = data.content || [];
+      datasetTotalPages = Math.max(1, data.totalPages || 1);
+      document.getElementById('datasetsBody').innerHTML = items.map(dataset => `
+        <tr data-dataset-name="${escapeHtml(dataset.datasetName)}">
+          <td><strong>${escapeHtml(dataset.datasetName)}</strong><br><span class="sub">${escapeHtml(dataset.description || '')}</span></td>
+          <td>${Number(dataset.totalRecords).toLocaleString()}</td>
+          <td>${escapeHtml(dataset.schemaVersion)}</td>
+          <td>${new Date(dataset.createdAt).toLocaleDateString()}</td>
+          <td class="dataset-actions">
+            <button class="btn-secondary" type="button" onclick="editDataset(${dataset.id})">Edit</button>
+            <button class="btn-secondary" type="button" onclick="selectDataset(${dataset.id}, this.closest('tr').dataset.datasetName)">Columns</button>
+            <button class="btn-secondary" type="button" onclick="deleteDataset(${dataset.id})">Delete</button>
+          </td>
+        </tr>`).join('');
+      document.getElementById('datasetPageInfo').textContent = `Page ${datasetCurrentPage + 1} of ${datasetTotalPages}`;
+      document.getElementById('datasetPrev').disabled = datasetCurrentPage <= 0;
+      document.getElementById('datasetNext').disabled = datasetCurrentPage >= datasetTotalPages - 1;
+    } catch (error) {
+      showDatasetError(error.message);
+    }
+  }
+
+  function changeDatasetPage(delta) {
+    loadDatasetPage(datasetCurrentPage + delta);
+  }
+
+  async function saveDataset(event) {
+    event.preventDefault();
+    const datasetId = document.getElementById('datasetEditId').value;
+    const body = {
+      datasetName: document.getElementById('datasetNameInput').value.trim(),
+      description: document.getElementById('datasetDescriptionInput').value.trim(),
+      totalRecords: Number(document.getElementById('datasetRecordsInput').value)
+    };
+    const path = datasetId ? `/api/datasets/${datasetId}` : '/api/datasets';
+    const method = datasetId ? 'PUT' : 'POST';
+    if (!datasetId) body.databaseId = currentDbId;
+    if (datasetId) body.schemaVersion = document.getElementById('datasetVersionInput').value.trim();
+    try {
+      await datasetRequest(path, { method, body: JSON.stringify(body) });
+      resetDatasetForm();
+      await loadDatasetPage(datasetCurrentPage);
+      showDatasetError();
+    } catch (error) {
+      showDatasetError(error.message);
+    }
+  }
+
+  async function editDataset(datasetId) {
+    try {
+      const dataset = await datasetRequest(`/api/datasets/${datasetId}`);
+      document.getElementById('datasetEditId').value = dataset.id;
+      document.getElementById('datasetNameInput').value = dataset.datasetName;
+      document.getElementById('datasetDescriptionInput').value = dataset.description || '';
+      document.getElementById('datasetRecordsInput').value = dataset.totalRecords;
+      document.getElementById('datasetVersionInput').value = dataset.schemaVersion;
+      document.getElementById('datasetVersionGroup').style.display = 'flex';
+      document.getElementById('datasetSaveButton').textContent = 'Save dataset';
+      document.getElementById('datasetCancelButton').style.display = 'inline-flex';
+    } catch (error) {
+      showDatasetError(error.message);
+    }
+  }
+
+  function resetDatasetForm() {
+    document.getElementById('datasetForm').reset();
+    document.getElementById('datasetEditId').value = '';
+    document.getElementById('datasetRecordsInput').value = '0';
+    document.getElementById('datasetVersionInput').value = '1.0';
+    document.getElementById('datasetVersionGroup').style.display = 'none';
+    document.getElementById('datasetSaveButton').textContent = 'Create dataset';
+    document.getElementById('datasetCancelButton').style.display = 'none';
+  }
+
+  async function deleteDataset(datasetId) {
+    if (!window.confirm('Delete this dataset and all its column definitions?')) return;
+    try {
+      await datasetRequest(`/api/datasets/${datasetId}`, { method: 'DELETE' });
+      if (selectedDatasetId === datasetId) {
+        selectedDatasetId = null;
+        document.getElementById('columnManager').style.display = 'none';
+      }
+      await loadDatasetPage(Math.min(datasetCurrentPage, datasetTotalPages - 1));
+    } catch (error) {
+      showDatasetError(error.message);
+    }
+  }
+
+  async function selectDataset(datasetId, datasetName) {
+    selectedDatasetId = datasetId;
+    document.getElementById('selectedDatasetName').textContent = datasetName;
+    document.getElementById('columnManager').style.display = 'block';
+    await loadColumns();
+  }
+
+  async function loadColumns() {
+    if (!selectedDatasetId) return;
+    try {
+      selectedDatasetColumns = await datasetRequest(`/api/datasets/${selectedDatasetId}/columns`);
+      document.getElementById('columnsBody').innerHTML = selectedDatasetColumns.map(column => `
+        <tr>
+          <td>${escapeHtml(column.columnName)}</td>
+          <td>${escapeHtml(column.dataType)}</td>
+          <td>${column.clippingLower} - ${column.clippingUpper}</td>
+          <td>${column.sensitivity}</td>
+          <td>${column.targetMetric ? 'Yes' : 'No'}</td>
+          <td class="dataset-actions">
+            <button class="btn-secondary" type="button" onclick="editColumn(${column.id})">Edit</button>
+            <button class="btn-secondary" type="button" onclick="deleteColumn(${column.id})">Delete</button>
+          </td>
+        </tr>`).join('');
+    } catch (error) {
+      showDatasetError(error.message);
+    }
+  }
+
+  async function saveColumn(event) {
+    event.preventDefault();
+    const columnId = document.getElementById('columnEditId').value;
+    const body = {
+      columnName: document.getElementById('columnNameInput').value.trim(),
+      dataType: document.getElementById('columnTypeInput').value.trim(),
+      clippingLower: Number(document.getElementById('columnLowerInput').value),
+      clippingUpper: Number(document.getElementById('columnUpperInput').value),
+      targetMetric: document.getElementById('columnTargetInput').checked
+    };
+    const path = `/api/datasets/${selectedDatasetId}/columns${columnId ? `/${columnId}` : ''}`;
+    try {
+      await datasetRequest(path, { method: columnId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      resetColumnForm();
+      await loadColumns();
+      showDatasetError();
+    } catch (error) {
+      showDatasetError(error.message);
+    }
+  }
+
+  function editColumn(columnId) {
+    const column = selectedDatasetColumns.find(item => item.id === columnId);
+    if (!column) return;
+    document.getElementById('columnEditId').value = column.id;
+    document.getElementById('columnNameInput').value = column.columnName;
+    document.getElementById('columnTypeInput').value = column.dataType;
+    document.getElementById('columnLowerInput').value = column.clippingLower;
+    document.getElementById('columnUpperInput').value = column.clippingUpper;
+    document.getElementById('columnTargetInput').checked = column.targetMetric;
+    document.getElementById('columnSaveButton').textContent = 'Save column';
+    document.getElementById('columnCancelButton').style.display = 'inline-flex';
+  }
+
+  function resetColumnForm() {
+    document.getElementById('columnForm').reset();
+    document.getElementById('columnEditId').value = '';
+    document.getElementById('columnTypeInput').value = 'NUMERIC';
+    document.getElementById('columnTargetInput').checked = true;
+    document.getElementById('columnSaveButton').textContent = 'Add column';
+    document.getElementById('columnCancelButton').style.display = 'none';
+  }
+
+  async function deleteColumn(columnId) {
+    if (!window.confirm('Delete this column definition?')) return;
+    try {
+      await datasetRequest(`/api/datasets/${selectedDatasetId}/columns/${columnId}`, { method: 'DELETE' });
+      await loadColumns();
+    } catch (error) {
+      showDatasetError(error.message);
     }
   }
 

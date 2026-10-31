@@ -83,6 +83,8 @@ public class UserService {
     public UserResponse updateUser(Long id, String fullName, String roleStr, Boolean active) {
         User user = userRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + id));
+        User.Role originalRole = user.getRole();
+        boolean originalActive = user.isActive();
 
         if (fullName != null && !fullName.isBlank()) {
             user.setFullName(fullName.trim());
@@ -106,7 +108,17 @@ public class UserService {
             }
             user.setActive(active);
         }
+        if (user.getRole() != originalRole || user.isActive() != originalActive) {
+            user.setTokenVersion(user.getTokenVersion() + 1);
+        }
         return toResponse(userRepository.save(user));
+    }
+
+    @Transactional
+    public void logout(Long userId) {
+        if (userRepository.incrementTokenVersion(userId) != 1) {
+            throw new IllegalStateException("Could not invalidate authentication tokens for user: " + userId);
+        }
     }
 
     @Transactional

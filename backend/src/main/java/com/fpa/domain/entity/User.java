@@ -38,6 +38,9 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion;
+
     public User() {
     }
 
@@ -55,6 +58,8 @@ public class User {
     public void setActive(boolean active) { this.active = active; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public int getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(int tokenVersion) { this.tokenVersion = tokenVersion; }
 
     public static Builder builder() {
         return new Builder();
@@ -63,12 +68,14 @@ public class User {
     public static final class Builder {
         private final User target = new User();
 
+        public Builder id(Long id) { target.id = id; return this; }
         public Builder fullName(String fullName) { target.fullName = fullName; return this; }
         public Builder email(String email) { target.email = email; return this; }
         public Builder passwordHash(String passwordHash) { target.passwordHash = passwordHash; return this; }
         public Builder role(Role role) { target.role = role; return this; }
         public Builder active(boolean active) { target.active = active; return this; }
         public Builder createdAt(LocalDateTime createdAt) { target.createdAt = createdAt; return this; }
+        public Builder tokenVersion(int tokenVersion) { target.tokenVersion = tokenVersion; return this; }
         public User build() { return target; }
     }
 

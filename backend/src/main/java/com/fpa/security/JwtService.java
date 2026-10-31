@@ -4,6 +4,7 @@ import com.fpa.domain.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -15,37 +16,40 @@ import java.util.function.Function;
  * Issues and validates JWTs using the existing JJWT dependencies already
  * present in pom.xml. No new dependency added.
  *
- * The signing secret is read from the JWT_SECRET environment variable (same
- * pattern already used for DB_USERNAME/DB_PASSWORD), falling back to a demo
- * default if unset. For anything beyond a hackathon demo, JWT_SECRET should
- * be set explicitly to a strong random value.
+ * The signing secret is injected from JWT_SECRET. Startup fails if it is
+ * missing or too short rather than issuing tokens with a known fallback key.
  */
 @Component
 public class JwtService {
 
-    private static final String DEFAULT_SECRET =
-        "fpa-demo-jwt-secret-key-change-me-please-32bytesmin";
-
-    private static final long EXPIRATION_MS = 8 * 60 * 60 * 1000L; // 8 hours
-
     private final SecretKey signingKey;
+    private final long expirationMs;
 
-    public JwtService() {
-        String secret = System.getenv("JWT_SECRET");
+    public JwtService(@Value("${app.jwt.secret}") String secret,
+                      @Value("${app.jwt.expiration-ms:28800000}") long expirationMs) {
         if (secret == null || secret.isBlank()) {
-            secret = DEFAULT_SECRET;
+            throw new IllegalStateException("JWT_SECRET must be configured");
         }
-        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < 32) {
+            throw new IllegalStateException("JWT_SECRET must contain at least 32 UTF-8 bytes");
+        }
+        if (expirationMs <= 0) {
+            throw new IllegalStateException("JWT_EXPIRATION_MS must be greater than zero");
+        }
+        this.signingKey = Keys.hmacShaKeyFor(keyBytes);
+        this.expirationMs = expirationMs;
     }
 
     public String generateToken(User user) {
         Date now = new Date();
-        Date expiry = new Date(now.getTime() + EXPIRATION_MS);
+        Date expiry = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
             .subject(user.getEmail())
             .claim("role", user.getRole().name())
             .claim("userId", user.getId())
+            .claim("tokenVersion", user.getTokenVersion())
             .issuedAt(now)
             .expiration(expiry)
             .signWith(signingKey)
@@ -60,10 +64,13 @@ public class JwtService {
         return extractAllClaims(token).get("role", String.class);
     }
 
-    public boolean isTokenValid(String token, String expectedEmail) {
+    public boolean isTokenValid(String token, String expectedEmail, int expectedTokenVersion) {
         try {
             String email = extractEmail(token);
-            return email.equals(expectedEmail) && !isTokenExpired(token);
+            int tokenVersion = extractAllClaims(token).get("tokenVersion", Integer.class);
+            return email.equals(expectedEmail)
+                && tokenVersion == expectedTokenVersion
+                && !isTokenExpired(token);
         } catch (Exception ex) {
             return false;
         }
