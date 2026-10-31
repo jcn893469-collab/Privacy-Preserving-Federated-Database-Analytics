@@ -571,11 +571,7 @@
       }
     });
     const body = await response.json().catch(() => ({}));
-    if (response.status === 401) {
-      OrgAuth.clearSession();
-      window.location.href = 'org-login.html?reason=session-expired';
-      throw new Error('Your session has expired. Please log in again.');
-    }
+    OrgAuth.handleAuthFailure(response, 'The server rejected the authentication request.');
     if (!response.ok) throw new Error(body.error || `Dataset request failed (${response.status})`);
     return body;
   }

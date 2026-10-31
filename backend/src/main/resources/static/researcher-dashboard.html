@@ -108,11 +108,7 @@
           ...(options.body ? { 'Content-Type': 'application/json' } : {})
         }
       });
-      if (response.status === 401) {
-        OrgAuth.clearSession();
-        window.location.replace('org-login.html?reason=session-expired');
-        throw new Error('Your session has expired. Please sign in again.');
-      }
+      OrgAuth.handleAuthFailure(response, 'The server rejected the authentication request.');
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
       return payload;

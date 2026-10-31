@@ -1,5 +1,6 @@
 package com.fpa.domain.entity;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -8,9 +9,12 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "dataset_metadata")
@@ -23,6 +27,9 @@ public class DatasetMetadata {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "database_id", nullable = false)
     private FederatedDatabase database;
+
+    @OneToMany(mappedBy = "dataset", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<DatasetColumnSchema> columnSchemas = new ArrayList<>();
 
     @Column(name = "dataset_name", nullable = false, length = 150)
     private String datasetName;
@@ -49,6 +56,7 @@ public class DatasetMetadata {
     public void setId(Long id) { this.id = id; }
     public FederatedDatabase getDatabase() { return database; }
     public void setDatabase(FederatedDatabase database) { this.database = database; }
+    public List<DatasetColumnSchema> getColumnSchemas() { return columnSchemas; }
     public String getDatasetName() { return datasetName; }
     public void setDatasetName(String datasetName) { this.datasetName = datasetName; }
     public String getDescription() { return description; }

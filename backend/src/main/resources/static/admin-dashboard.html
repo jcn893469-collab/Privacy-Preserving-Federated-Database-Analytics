@@ -475,11 +475,7 @@
     options.headers = options.headers || {};
     options.headers['Authorization'] = `Bearer ${adminSession.token}`;
     const res = await fetch(url, options);
-    if (res.status === 401) {
-      OrgAuth.clearSession();
-      window.location.href = 'org-login.html?reason=session-expired';
-      throw new Error('Your session has expired. Please log in again.');
-    }
+    OrgAuth.handleAuthFailure(res, 'The server rejected the authentication request.');
     if (res.status === 403) {
       const message = 'Access denied. You do not have permission for this action.';
       setDashboardNotice(message, true);

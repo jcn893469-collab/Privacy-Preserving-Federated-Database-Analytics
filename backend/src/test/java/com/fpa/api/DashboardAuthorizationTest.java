@@ -23,6 +23,7 @@ import com.fpa.service.FederatedDatabaseService;
 import com.fpa.service.DatasetService;
 import com.fpa.service.PublicDashboardService;
 import com.fpa.service.UserService;
+import io.jsonwebtoken.JwtException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,7 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 @WebMvcTest(controllers = {
     AdminController.class,
@@ -284,6 +286,18 @@ class DashboardAuthorizationTest {
                 .post("/api/analytics/results/runs?metric=overall")
                 .with(SecurityMockMvcRequestPostProcessors.user("owner").roles("DATA_OWNER")))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void missingAndInvalidJwtTokensReceiveAnAuthenticationChallenge() throws Exception {
+        mockMvc.perform(get("/api/datasets/database/1"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(header().string("WWW-Authenticate", "Bearer"));
+
+        when(jwtService.extractEmail("invalid")).thenThrow(new JwtException("Invalid JWT"));
+        mockMvc.perform(get("/api/datasets/database/1").header("Authorization", "Bearer invalid"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(header().string("WWW-Authenticate", "Bearer"));
     }
 
     @Test

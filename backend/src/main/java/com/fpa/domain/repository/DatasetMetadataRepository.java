@@ -21,7 +21,8 @@ public interface DatasetMetadataRepository extends JpaRepository<DatasetMetadata
     @Query("SELECT dm FROM DatasetMetadata dm " +
            "JOIN FETCH dm.database db " +
            "WHERE (:databaseId IS NULL OR db.id = :databaseId) " +
-           "AND (:query IS NULL OR LOWER(dm.datasetName) LIKE LOWER(CONCAT('%', :query, '%'))) " +
+           "AND (TRIM(COALESCE(:query, '')) = '' OR " +
+           "LOWER(dm.datasetName) LIKE LOWER(CONCAT('%', TRIM(COALESCE(:query, '')), '%'))) " +
            "ORDER BY dm.createdAt DESC")
     Page<DatasetMetadata> searchAndFilter(
             @Param("databaseId") Long databaseId,

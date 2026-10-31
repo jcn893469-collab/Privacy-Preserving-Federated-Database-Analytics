@@ -13,6 +13,8 @@ import com.fpa.security.CurrentUserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,7 +24,10 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,7 +62,7 @@ class DatasetServiceTest {
         dataset.setId(20L);
         column = DatasetColumnSchema.builder().dataset(dataset).columnName("pressure").build();
         column.setId(30L);
-        when(currentUserService.requireUser()).thenReturn(owner);
+        lenient().when(currentUserService.requireUser()).thenReturn(owner);
     }
 
     @Test
@@ -151,6 +156,19 @@ class DatasetServiceTest {
 
         verify(columnRepository).delete(column);
         verify(datasetRepository).delete(dataset);
+    }
+
+    @Test
+    void normalizesOptionalDatasetSearchTermsToTypedTextValues() {
+        when(datasetRepository.searchAndFilter(eq(10L), eq(""), any())).thenReturn(Page.empty());
+        when(datasetRepository.searchAndFilter(eq(10L), eq("vitals"), any())).thenReturn(Page.empty());
+
+        datasetService.searchDatasets(10L, null, PageRequest.of(0, 10));
+        datasetService.searchDatasets(10L, "   ", PageRequest.of(0, 10));
+        datasetService.searchDatasets(10L, " vitals ", PageRequest.of(0, 10));
+
+        verify(datasetRepository, times(2)).searchAndFilter(eq(10L), eq(""), any());
+        verify(datasetRepository).searchAndFilter(eq(10L), eq("vitals"), any());
     }
 
     private DatasetColumnRequest columnRequest(

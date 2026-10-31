@@ -102,16 +102,21 @@ const OrgAuth = {
     return data;
   },
 
-  handleAuthFailure(status, message) {
-    if (status === 401) {
+  isAuthenticationFailure(response) {
+    return response.status === 401
+      && /^Bearer(?:\s|$)/i.test(response.headers.get('WWW-Authenticate') || '');
+  },
+
+  handleAuthFailure(response, message) {
+    if (this.isAuthenticationFailure(response)) {
       this.clearSession();
       window.location.href = 'org-login.html?reason=session-expired';
       throw new Error(message || 'Your session has expired. Please log in again.');
     }
-    if (status === 403) {
+    if (response.status === 403) {
       throw new Error(message || 'Access denied. You do not have permission for this action.');
     }
-    throw new Error(message || 'Authentication failed.');
+    return false;
   },
 
   async fetchMyDatabases() {
@@ -121,12 +126,9 @@ const OrgAuth = {
     const res = await fetch('/api/databases/mine', {
       headers: { Authorization: `Bearer ${session.token}` }
     });
-    if (res.status === 401) {
-      this.handleAuthFailure(401, 'Session expired. Please log in.');
-    }
-    if (res.status === 403) {
-      this.handleAuthFailure(403, 'Access denied. You do not have permission for this action.');
-    }
+    this.handleAuthFailure(res, res.status === 401
+      ? 'The server rejected the authentication request.'
+      : 'Access denied. You do not have permission for this action.');
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `Request failed (${res.status})`);
@@ -209,12 +211,9 @@ const OrgAuth = {
     });
 
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      this.handleAuthFailure(401, 'Session expired. Please log in.');
-    }
-    if (res.status === 403) {
-      this.handleAuthFailure(403, 'Access denied. You do not have permission for this action.');
-    }
+    this.handleAuthFailure(res, res.status === 401
+      ? 'The server rejected the authentication request.'
+      : 'Access denied. You do not have permission for this action.');
     if (!res.ok) {
       throw new Error(data.error || `Contribution rejected (${res.status})`);
     }

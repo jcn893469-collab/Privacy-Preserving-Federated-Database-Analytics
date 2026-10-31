@@ -129,7 +129,8 @@ public class DatasetService {
 
     @Transactional(readOnly = true)
     public Page<DatasetMetadata> searchDatasets(Long databaseId, String query, Pageable pageable) {
-        return datasetMetadataRepository.searchAndFilter(databaseId, query, pageable);
+        String normalizedQuery = query == null ? "" : query.trim();
+        return datasetMetadataRepository.searchAndFilter(databaseId, normalizedQuery, pageable);
     }
 
     @Transactional(readOnly = true)
